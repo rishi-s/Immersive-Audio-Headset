@@ -32,7 +32,7 @@ The Bela software is distributed under the GNU Lesser General Public License
 
 #define NUM_CHANNELS 1    // NUMBER OF CHANNELS IN THE FILE
 #define BUFFER_SIZE 32768   // BUFFER SIZE
-#define NUM_STREAMS 8
+#define NUM_STREAMS 10
 #define NUM_SPEAKERS 8
 
 // instantiate the sampleStream class for the required number of streams
@@ -52,8 +52,6 @@ int gCount = 0;
 // FFT buffer variables
 float gInputBuffer[NUM_STREAMS][BUFFER_SIZE];
 int gInputBufferPointer = 0;
-float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
-int gVBAPBufferPointer = 0;
 float gOutputBufferL[BUFFER_SIZE];
 float gOutputBufferR[BUFFER_SIZE];
 int gOutputBufferReadPointer;
@@ -67,7 +65,7 @@ int gSampleCount = 0;
 int gFFTSize = 2048;
 int gHopSize = gFFTSize / 4;
 float gFFTScaleFactor = 0;
-
+float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
 
 // FFT vars
 ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS];
@@ -120,8 +118,10 @@ void loadImpulse(){
       int impulseChannel = (i*2)+ch;
       gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
       gImpulseData[impulseChannel].samples = new float[gFFTSize];
-      getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, gImpulseData[impulseChannel].sampleLen);
-      rt_printf("Impulse %d = %f\n",impulseChannel, gImpulseData[impulseChannel].samples[511]);
+      getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
+        gImpulseData[impulseChannel].sampleLen);
+      rt_printf("Impulse %d = %f\n",impulseChannel, \
+        gImpulseData[impulseChannel].samples[511]);
     }
 
   }
@@ -224,49 +224,42 @@ bool setup(BelaContext *context, void *userData)
     "fill-buffer")) == 0)
   return false;
 
-  rt_printf("Test: %f",gVBAPGains4Speakers[4][4]);
-
   return true;
 }
 
 void process_fft()
 {
-  // Copy buffer into FFT input.
-  int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
-  for(int streams=0; streams<NUM_STREAMS;streams++){
-    for(int speakers=0; speakers<NUM_SPEAKERS;speakers++){
-      gVBAPBuffers[speakers][pointer]=+ gInputBuffer[streams][pointer] \
-        * gVBAPGains8Speakers[streams][speakers];
-    }
-    pointer++;
-    if (pointer >= BUFFER_SIZE)
-    pointer = 0;
-  }
-  
-  for(int speakers=0; speakers<NUM_SPEAKERS;speakers++){
+
+  //Create the binaural signal for each speaker and sum to the L/R Outputs
+  for(int speaker=0; speaker<NUM_SPEAKERS;speaker++){
+    // Copy individual streams into FFT buffer.
+    int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gFFTSize; n++) {
-      signalTimeDomainIn[n].r = (ne10_float32_t) gInputBuffer[speakers][pointer] * gWindowBuffer[n];
+      signalTimeDomainIn[n].r = 0.0;
       signalTimeDomainIn[n].i = 0.0;
-      // Update "pointer" each time and wrap it around to keep it within the
-      // circular buffer.
+      for(int stream=0; stream<NUM_STREAMS;stream++){
+        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
+          * gStreamGains[stream] * gVBAPGains8Speakers[stream][speaker] * gWindowBuffer[n];
+        // Update "pointer" each time and wrap it around to keep it within the
+        // circular buffer.
+      }
       pointer++;
       if (pointer >= BUFFER_SIZE)
       pointer = 0;
     }
-
     // Run the FFT
     ne10_fft_c2c_1d_float32_neon (signalFrequencyDomain, signalTimeDomainIn, \
       cfg, 0);
 
     for(int n=0;n<gFFTSize;n++){
       signalFrequencyDomainL[n].r = signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainL[speakers][n].r;
+        impulseFrequencyDomainL[speaker][n].r;
       signalFrequencyDomainL[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainL[speakers][n].i;
+        impulseFrequencyDomainL[speaker][n].i;
       signalFrequencyDomainR[n].r = signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainR[speakers][n].r;
+        impulseFrequencyDomainR[speaker][n].r;
       signalFrequencyDomainR[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainR[speakers][n].i;
+        impulseFrequencyDomainR[speaker][n].i;
     }
 
     // Run the inverse FFTs
@@ -276,12 +269,10 @@ void process_fft()
         cfg, 1);
 
     // Copy signalTimeDomainOut into the output buffer.
-    int pointer = gFFTOutputBufferPointer;
+    pointer = gFFTOutputBufferPointer;
     for(int n=0; n<gFFTSize; n++) {
-      gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor \
-        * gStreamGains[speakers];
-      gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor \
-        * gStreamGains[speakers];
+      gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
+      gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
       pointer++;
       if(pointer >= BUFFER_SIZE)
       pointer = 0;
