@@ -1,61 +1,40 @@
 /*
-____  _____ _        _
-| __ )| ____| |      / \
-|  _ \|  _| | |     / _ \
-| |_) | |___| |___ / ___ \
-|____/|_____|_____/_/   \_\
-
-The platform for ultra-low latency audio and sensor processing
-
-http://bela.io
-
-A project of the Augmented Instruments Laboratory within the
-Centre for Digital Music at Queen Mary University of London.
-http://www.eecs.qmul.ac.uk/~andrewm
-
-(c) 2016 Augmented Instruments Laboratory: Andrew McPherson,
-Astrid Bin, Liam Donovan, Christian Heinrichs, Robert Jack,
-Giulio Moro, Laurel Pardue, Victor Zappi. All rights reserved.
-
-The Bela software is distributed under the GNU Lesser General Public License
-(LGPL 3.0), available here: https://www.gnu.org/licenses/lgpl-3.0.txt
-*/
+ *  Created on: 21 April, 2018
+ *      Author: Rishi Shukla
+ *****  Code extended and adapted from RTDSP module overlap add solution  *****
+ */
 
 // include files
 #include <Bela.h>
-#include <ne10/NE10.h>					// neon library
 #include <cmath>
-#include <SampleStream.h>
-#include <SampleLoader.h>
-#include <VBAPData.h>
-#include <StreamGainData.h>
-#include <ImpulseData.h>
+#include <ne10/NE10.h>			// neon library
+#include <SampleStream.h>   // adapted Bela code for streaming/processing audio
+#include <SampleLoader.h>   // adapted Bela code for loading short audio files
+#include <ImpulseData.h>    // distinct struct file to identify impulse responses
+#include <VBAPData.h>       // lookup tables for VBAP speaker weightings
+#include <StreamGainData.h> // table for audio track level balancing / muting
 
-
-
-#define NUM_CHANNELS 1    // NUMBER OF CHANNELS IN THE FILE
 #define BUFFER_SIZE 32768   // BUFFER SIZE
-#define NUM_STREAMS 10
-#define NUM_SPEAKERS 8
+#define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
+#define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
+#define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
 
-extern int gSpeakers;
-extern int gTracks;
-extern bool gVoiceMeta;
+extern int gSpeakers;       // Number of Speakers chosen by user
+extern int gTracks;         // Concurrent tracks chosen by user
+extern bool gVoiceMeta;     // Metadata playback on/off chosen by user
 
-// instantiate the sampleStream class for the required number of streams
+// instantiate the sampleStream class
 SampleStream *sampleStream[NUM_STREAMS];
 
+// instantiate binaural impulse response data buffers (left and right channels)
 ImpulseData gImpulseData[NUM_SPEAKERS*2];
 
-// global variables for stream playback
+// global variables for stream playback code
 int gStopThreads = 0;
 int gTaskStopped = 0;
 int gCount = 0;
 
-
-
-
-// FFT buffer variables
+// FFT overlap/add buffers and variables
 float gInputBuffer[NUM_STREAMS][BUFFER_SIZE];
 int gInputBufferPointer = 0;
 float gOutputBufferL[BUFFER_SIZE];
@@ -66,77 +45,59 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-
-// These variables used internally in the example:
 int gFFTSize = 2048;
 int gHopSize = gFFTSize / 4;
 float gFFTScaleFactor = 0;
+
+// additional buffers for summing VBAP feeds to each virtual speaker
 float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
 
-// FFT vars
+// buffers and configuration for Neon FFT processing
 ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS];
 ne10_fft_cpx_float32_t* impulseTimeDomainR[NUM_SPEAKERS];
 ne10_fft_cpx_float32_t* impulseFrequencyDomainL[NUM_SPEAKERS];
 ne10_fft_cpx_float32_t* impulseFrequencyDomainR[NUM_SPEAKERS];
 ne10_fft_cpx_float32_t* signalTimeDomainIn;
-ne10_fft_cpx_float32_t* signalFrequencyDomain;
+ne10_fft_cpx_float32_t* signalFrequencyDomain;  // (buffer to calculate L/R)
 ne10_fft_cpx_float32_t* signalFrequencyDomainL;
 ne10_fft_cpx_float32_t* signalFrequencyDomainR;
 ne10_fft_cpx_float32_t* signalTimeDomainOutL;
 ne10_fft_cpx_float32_t* signalTimeDomainOutR;
 ne10_fft_cfg_float32_t cfg;
 
-// instantialte auxiliary task
+// instantialte auxiliary task to fill buffers
 AuxiliaryTask gFillBuffersTask;
-// Auxiliary task for calculating FFT
+// instatiate auxiliary task to calculate FFTs
 AuxiliaryTask gFFTTask;
 
+//declare process_fft_backround method
 void process_fft_background(void *);
 
 
-
-// function to fill buffers for each declared stream
-void fillBuffers(void*) {
-  for(int i=0;i<NUM_STREAMS;i++) {
-    if(sampleStream[i]->bufferNeedsFilled())
-    sampleStream[i]->fillBuffer();
-  }
-}
-
-
-// setup() is called once before the audio rendering starts.
-// Use it to perform any initialisation and allocation which is dependent
-// on the period size or sample rate.
-//
-// Return true on success; returning false halts the program.
-
-
-// This function handles the FFT processing in this example once the buffer has
-// been assembled.
-
+// function to load HRIRs for either 4 or 8 virtual speakers declared on startup
 void loadImpulse(){
-  // load an impulse .wav file into each stream
+  // load impulse .wav files from the relevant directory
   for(int i=0;i<gSpeakers;i++) {
     std::string speakers=to_string(gSpeakers);
     std::string number=to_string(i+1);
     std::string file= "./" + speakers + "speakers/impulse" + number + ".wav";
     const char * id = file.c_str();
+    //determine the HRIR lengths (in samples) and populate the buffers
     for(int ch=0;ch<2;ch++) {
       int impulseChannel = (i*2)+ch;
       gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
       gImpulseData[impulseChannel].samples = new float[gFFTSize];
       getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
         gImpulseData[impulseChannel].sampleLen);
-      rt_printf("Impulse %d = %f\n",impulseChannel, \
-        gImpulseData[impulseChannel].samples[511]);
     }
 
   }
 }
 
-void loadStream(){
 
-  // load a playback .wav file into each stream
+// function to prepare maximum number of audio streams for playback
+void loadStream(){
+  // load a playback .wav file into each stream buffer
   for(int k=0;k<NUM_STREAMS;k++) {
     std::string number=to_string(k+1);
     std::string file= "track" + number + ".wav";
@@ -145,16 +106,10 @@ void loadStream(){
   }
 }
 
-bool setup(BelaContext *context, void *userData)
-{
-  rt_printf("Speakers: %d\t Tracks: %d\t Voice: %d\t",gSpeakers,gTracks,gVoiceMeta);
-  loadImpulse();
-  loadStream();
 
-
-  // set up FFT
+// funciton to prepare FFT buffers for input signals and allocate memory
+void prepFFT(){
   gFFTScaleFactor = 1.0f / (float)gFFTSize * 1000;
-  rt_printf("scale factor: %f\n", gFFTScaleFactor);
   signalTimeDomainIn = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
     sizeof (ne10_fft_cpx_float32_t));
   signalFrequencyDomain = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
@@ -168,13 +123,6 @@ bool setup(BelaContext *context, void *userData)
   signalTimeDomainOutR = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
     sizeof (ne10_fft_cpx_float32_t));
   cfg = ne10_fft_alloc_c2c_float32_neon (gFFTSize);
-
-  // Initialise auxiliary tasks
-  if((gFFTTask = Bela_createAuxiliaryTask(&process_fft_background, 90, \
-    "fft-calculation")) == 0)
-  return false;
-
-
   memset(gInputBuffer, 0, BUFFER_SIZE * sizeof(float));
   memset(signalTimeDomainIn, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
   memset(signalFrequencyDomain, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
@@ -184,38 +132,24 @@ bool setup(BelaContext *context, void *userData)
   memset(signalTimeDomainOutR, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
   memset(gOutputBufferL, 0, BUFFER_SIZE * sizeof(float));
   memset(gOutputBufferR, 0, BUFFER_SIZE * sizeof(float));
+}
 
-  gOutputBufferReadPointer = 0;
-  gOutputBufferWritePointer = gHopSize;
 
-  // Allocate the window buffer based on the FFT size
-  gWindowBuffer = (float *)malloc(gFFTSize * sizeof(float));
-  if(gWindowBuffer == 0)
-  	return false;
-
-  // Calculate a Hann window
-  for(int n = 0; n < gFFTSize; n++) {
-  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
-  }
-
-  if(gVoiceMeta==0){
-    for(int i=NUM_STREAMS/2;i<NUM_STREAMS;i++){
-      gStreamGains[gTracks-1][i]=0.0;
-    }
-  }
-  /*----------------------*/
-  // Generate IR frequency domain values (with both real and imaginary components)
+// function to generate IR frequency domain values
+void transformHRIRs(){
+  // allocate memory to HRIR FFT buffers (left and right)
   for (int i = 0; i < gSpeakers; i++){
     int impulseL = i*2;
     int impulseR = impulseL+1;
-    impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
-      sizeof (ne10_fft_cpx_float32_t));
-    impulseTimeDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
-      sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
-      sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
-      sizeof (ne10_fft_cpx_float32_t));
+    impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+      * sizeof (ne10_fft_cpx_float32_t));
+    impulseTimeDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+      * sizeof (ne10_fft_cpx_float32_t));
+    impulseFrequencyDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+       * sizeof (ne10_fft_cpx_float32_t));
+    impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+      * sizeof (ne10_fft_cpx_float32_t));
+    // assign real and imaginary components to each HRIR FFT buffer
     for (int n = 0; n < gFFTSize; n++)
     {
       impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
@@ -223,16 +157,62 @@ bool setup(BelaContext *context, void *userData)
       impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
       impulseTimeDomainR[i][n].i = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
+    // transform to frequency domain (left and right)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
       cfg, 0);
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainR[i], impulseTimeDomainR[i], \
       cfg, 0);
   }
-  // Perform the FFT for the IR (left and right signals)
+}
 
-  /*----------------------*/
 
-  // check if buffers need to be filled
+// function to fill buffers for maximum number of streams on startup
+void fillBuffers(void*) {
+  for(int i=0;i<NUM_STREAMS;i++) {
+    if(sampleStream[i]->bufferNeedsFilled())
+    sampleStream[i]->fillBuffer();
+  }
+}
+
+
+// configure Bela environment for playback
+bool setup(BelaContext *context, void *userData)
+{
+  // print user command line selections
+  rt_printf("Speakers: %d\t Tracks: %d\t Voice Metadata: %d\t", \
+    gSpeakers,gTracks,gVoiceMeta);
+  loadImpulse();    // load HRIRs
+  loadStream();     // load audio streams
+  prepFFT();        // set up FFT
+  transformHRIRs(); // convert HRIRs to frequency domain
+
+  // initialise FFT auxiliary task
+  if((gFFTTask = Bela_createAuxiliaryTask(&process_fft_background, 90, \
+    "fft-calculation")) == 0)
+  return false;
+
+  // initialise main output buffer pointers
+  gOutputBufferReadPointer = 0;
+  gOutputBufferWritePointer = gHopSize;
+
+  // allocate the window buffer based on the FFT size
+  gWindowBuffer = (float *)malloc(gFFTSize * sizeof(float));
+  if(gWindowBuffer == 0)
+  	return false;
+
+  // calculate a Hann window for overlap/add processing
+  for(int n = 0; n < gFFTSize; n++) {
+  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
+  }
+
+  // silence voice metadata streams if switched off by user input
+  if(gVoiceMeta==0){
+    for(int i=NUM_STREAMS/2;i<NUM_STREAMS;i++){
+      gStreamGains[gTracks-1][i]=0.0;
+    }
+  }
+
+  // initialise streaming auxiliary task
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0)
   return false;
@@ -240,18 +220,20 @@ bool setup(BelaContext *context, void *userData)
   return true;
 }
 
+
 void process_fft()
 {
-
-  //Create the binaural signal for each speaker and sum to the L/R Outputs
+  // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<gSpeakers;speaker++){
-    // Copy individual streams into FFT buffer.
+    // copy individual streams into FFT buffer
     int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gFFTSize; n++) {
-      signalTimeDomainIn[n].r = 0.0;
+      signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
+      // Add the value for each stream, taking into account VBAP speaker and
+      // track gain weightings.
       for(int stream=0; stream<NUM_STREAMS;stream++){
-        if(gSpeakers==4){
+        if(gSpeakers==4){               // check speakers numbers for gain lookup
           signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
             * gStreamGains[gTracks-1][stream] * gVBAPGains4Speakers[stream][speaker];
         }
@@ -259,18 +241,19 @@ void process_fft()
           signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
             * gStreamGains[gTracks-1][stream] * gVBAPGains8Speakers[stream][speaker];
         }
-        // Update "pointer" each time and wrap it around to keep it within the
-        // circular buffer.
       }
+      // Update "pointer" each time and wrap it around to keep it within the
+      // circular buffer.
       signalTimeDomainIn[n].r *= gWindowBuffer[n];
       pointer++;
       if (pointer >= BUFFER_SIZE)
       pointer = 0;
     }
-    // Run the FFT
+    // convert speaker feed to frequency domian
     ne10_fft_c2c_1d_float32_neon (signalFrequencyDomain, signalTimeDomainIn, \
       cfg, 0);
 
+    // convolve speaker feed to binaural signal with relevant HRIR
     for(int n=0;n<gFFTSize;n++){
       signalFrequencyDomainL[n].r = signalFrequencyDomain[n].r * \
         impulseFrequencyDomainL[speaker][n].r;
@@ -282,13 +265,13 @@ void process_fft()
         impulseFrequencyDomainR[speaker][n].i;
     }
 
-    // Run the inverse FFTs
+    // convert result back to time domain (left and right)
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
       cfg, 1);
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
         cfg, 1);
 
-    // Copy signalTimeDomainOut into the output buffer.
+    // add results to left and outputs
     pointer = gFFTOutputBufferPointer;
     for(int n=0; n<gFFTSize; n++) {
       gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
@@ -300,86 +283,70 @@ void process_fft()
   }
 }
 
+
 // Function to process the FFT in a thread at lower priority
 void process_fft_background(void *) {
-  // TODO: call process_fft() using the pointer locations you saved in render()
   process_fft();
 }
 
+
 void render(BelaContext *context, void *userData){
+  // check if buffers need filling using low priority auxiliary task
+  Bela_scheduleAuxiliaryTask(gFillBuffersTask);
 
-// run check of buffers
-Bela_scheduleAuxiliaryTask(gFillBuffersTask);
+  // process the next audio frame
+  for(unsigned int n = 0; n < context->audioFrames; n++) {
 
+		// process and read frames for each sampleStream object into input buffer
+    for(int i=0; i<NUM_STREAMS; i++){
+      sampleStream[i]->processFrame();
+      gInputBuffer[i][gInputBufferPointer] = sampleStream[i]->getSample(0);
+    }
+		// copy output buffer L/R to audio output L/R
+		for(int channel = 0; channel < context->audioOutChannels; channel++) {
+			if(channel == 0) {
+        context->audioOut[n * context->audioOutChannels + channel] = \
+          gOutputBufferL[gOutputBufferReadPointer];
+      }
+      else if (channel == 1){
+        context->audioOut[n * context->audioOutChannels + channel] = \
+          gOutputBufferR[gOutputBufferReadPointer];
+      }
+	  }
 
-// apply processing to each stream
-for(unsigned int n = 0; n < context->audioFrames; n++) {
-  // fade in/out as necessary for each stream
-  for(int i=0;i<NUM_STREAMS;i++) {
-    //process frames for each sampleStream object (get samples per channel below)
-    sampleStream[i]->processFrame();
+    // clear the output samples in the buffers so they're ready for the next ola
+    gOutputBufferL[gOutputBufferReadPointer] = 0;
+    gOutputBufferR[gOutputBufferReadPointer] = 0;
+
+    // advance the output buffer pointer
+    gOutputBufferReadPointer++;
+    if(gOutputBufferReadPointer >= BUFFER_SIZE)
+    	gOutputBufferReadPointer = 0;
+
+    // advance the write pointer
+    gOutputBufferWritePointer++;
+    if(gOutputBufferWritePointer >= BUFFER_SIZE)
+    	gOutputBufferWritePointer = 0;
+
+    // advance the read pointer
+    gInputBufferPointer++;
+    if(gInputBufferPointer >= BUFFER_SIZE)
+    	gInputBufferPointer = 0;
+
+    // Increment gSampleCount and check if it reaches the hop size.
+    // If so, reset buffer pointers, run the FFT and reset gSampleCount.
+    gSampleCount++;
+    if(gSampleCount >= gHopSize) {
+    	gFFTInputBufferPointer = gInputBufferPointer;
+    	gFFTOutputBufferPointer = gOutputBufferWritePointer;
+      Bela_scheduleAuxiliaryTask(gFFTTask);
+    	gSampleCount = 0;
+    }
   }
-
-
-    // Prep the "input" to be the sound file played in a loop
-
-    		// -------------------------------------------------------------------
-    		// read sample data into input buffer
-        for(int i=0; i<NUM_STREAMS; i++){
-            gInputBuffer[i][gInputBufferPointer] = sampleStream[i]->getSample(0);
-        }
-
-
-    		// Copy output buffer to output
-    		for(int channel = 0; channel < context->audioOutChannels; channel++) {
-    			// Get the sample from the output buffer instead of sample buffer
-    			if(channel == 0) {
-            context->audioOut[n * context->audioOutChannels + channel] = \
-              gOutputBufferL[gOutputBufferReadPointer];
-          }
-          else if (channel == 1){
-            context->audioOut[n * context->audioOutChannels + channel] = \
-              gOutputBufferR[gOutputBufferReadPointer];
-          }
-
-    		}
-
-    		// Clear the output sample in the buffer so it is ready for the next overlap-add
-    		gOutputBufferL[gOutputBufferReadPointer] = 0;
-        gOutputBufferR[gOutputBufferReadPointer] = 0;
-
-    		// Advance the output buffer pointer exactly the same way as the input buffer pointer
-    		gOutputBufferReadPointer++;
-    		if(gOutputBufferReadPointer >= BUFFER_SIZE)
-    			gOutputBufferReadPointer = 0;
-
-    		// Update write pointer
-    		gOutputBufferWritePointer++;
-    		if(gOutputBufferWritePointer >= BUFFER_SIZE)
-    			gOutputBufferWritePointer = 0;
-
-    		gInputBufferPointer++;
-    		if(gInputBufferPointer >= BUFFER_SIZE)
-    			gInputBufferPointer = 0;
-
-
-    		// Increment gSampleCount and check if it reaches the hop size.
-        // If so, reset buffer pointers, run the FFT and reset gSampleCount.
-    		gSampleCount++;
-    		if(gSampleCount >= gHopSize) {
-    			gFFTInputBufferPointer = gInputBufferPointer;
-    			gFFTOutputBufferPointer = gOutputBufferWritePointer;
-
-    			Bela_scheduleAuxiliaryTask(gFFTTask);
-    			gSampleCount = 0;
-    		}
-
-  }
-
 }
 
 
-
+// Clear all input buffers
 void cleanup(BelaContext *context, void *userData)
 {
   for(int i=0;i<NUM_STREAMS;i++) {

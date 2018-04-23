@@ -1,3 +1,4 @@
+/***** Code taken from Bela SampleLoader example *****/
 /*
  * SampleData.h
  *

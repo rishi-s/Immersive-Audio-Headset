@@ -1,5 +1,7 @@
+/***** Code taken from Bela SampleLoader example *****/
 /***** SampleLoader.h *****/
 
+//include files
 #include <Bela.h>
 #include <sndfile.h>				// to load audio files
 #include <string>

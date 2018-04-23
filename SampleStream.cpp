@@ -1,3 +1,4 @@
+/***** Code taken from Bela SampleStream example *****/
 /***** SampleStream.cpp *****/
 #include <SampleStream.h>
 
@@ -97,7 +98,6 @@ int SampleStream::openFile(const char* filename, int numChannels, \
         }
     }
 
-    cout << "Loaded " << filename << endl;
 
     gBusy = 0;
 

@@ -1,8 +1,7 @@
 /*
- * ImpulseData.h
- *
- *  Created on: Nov 5, 2014
- *      Author: Victor Zappi
+ *  Created on: 21 April, 2018
+ *      Author: Rishi Shukla
+ ****** Code adapted from Bela SampleLoader example  *****
  */
 
 #ifndef IMPULSEDATA_H_

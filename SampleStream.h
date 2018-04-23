@@ -1,6 +1,5 @@
+/***** Code taken from Bela SampleLoader example *****/
 /***** SampleStream.h *****/
-
-// TODO: seek/rewind functions
 
 #ifndef SAMPLESTREAM_H_
 #define SAMPLESTREAM_H_
@@ -19,7 +18,7 @@ class SampleStream
 {
 
 public:
-    
+
     SampleStream(const char* filename, int numChannels, int bufferLength);
     ~SampleStream();
     int openFile(const char* filename, int numChannels, int bufferLength);
@@ -32,7 +31,7 @@ public:
     void togglePlayback(int toggle);
     void togglePlaybackWithFade(int toggle, float fadeLengthInSeconds);
     int isPlaying();
-    
+
 private:
 
     // private libsndfile wrappers
@@ -54,21 +53,21 @@ private:
     int gDoneLoadingBuffer;
     int gBufferLength;
     int gNumChannels;
-    
+
     int gNumFramesInFile;
     const char* gFilename;
     int gBufferToBeFilled;
     int gPlaying;
-    
+
     float gFadeAmount;
     float gFadeLengthInSeconds;
     int gFadeDirection;
-    
+
     int gBusy;
-    
+
     SNDFILE *sndfile = NULL;
 	SF_INFO sfinfo ;
-    
+
 };
 
 #endif // SAMPLESTREAM_H_
