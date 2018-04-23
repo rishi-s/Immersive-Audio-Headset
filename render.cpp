@@ -30,14 +30,20 @@ The Bela software is distributed under the GNU Lesser General Public License
 #include <VBAPData.h>
 #include <ImpulseData.h>
 
+
+
 #define NUM_CHANNELS 1    // NUMBER OF CHANNELS IN THE FILE
 #define BUFFER_SIZE 32768   // BUFFER SIZE
 #define NUM_STREAMS 10
 #define NUM_SPEAKERS 8
 
+extern int gSpeakers;
+extern int gTracks;
+extern bool gVoiceMeta;
+
 // instantiate the sampleStream class for the required number of streams
 SampleStream *sampleStream[NUM_STREAMS];
-float gStreamGains[]={0.195,0.255,0.18,0.135,0.18,0.195,0.195,0.195,0.195};
+float gStreamGains[]={0.195,0.255,0.18,0.135,0.18,0.135,0.135,0.135,0.135,0.135};
 
 ImpulseData gImpulseData[NUM_SPEAKERS*2];
 
@@ -111,8 +117,9 @@ void fillBuffers(void*) {
 void loadImpulse(){
   // load an impulse .wav file into each stream
   for(int i=0;i<NUM_SPEAKERS;i++) {
+    std::string speakers=to_string(NUM_SPEAKERS);
     std::string number=to_string(i+1);
-    std::string file= "impulse" + number + ".wav";
+    std::string file= "./" + speakers + "speakers/impulse" + number + ".wav";
     const char * id = file.c_str();
     for(int ch=0;ch<2;ch++) {
       int impulseChannel = (i*2)+ch;
@@ -190,6 +197,11 @@ bool setup(BelaContext *context, void *userData)
   	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
   }
 
+  if(gVoiceMeta==0){
+    for(int i=NUM_STREAMS/2;i<NUM_STREAMS;i++){
+      gStreamGains[i]=0.0;
+    }
+  }
   /*----------------------*/
   // Generate IR frequency domain values (with both real and imaginary components)
   for (int i = 0; i < NUM_SPEAKERS; i++){
@@ -238,11 +250,18 @@ void process_fft()
       signalTimeDomainIn[n].r = 0.0;
       signalTimeDomainIn[n].i = 0.0;
       for(int stream=0; stream<NUM_STREAMS;stream++){
-        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-          * gStreamGains[stream] * gVBAPGains8Speakers[stream][speaker] * gWindowBuffer[n];
+        if(NUM_SPEAKERS==4){
+          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
+            * gStreamGains[stream] * gVBAPGains4Speakers[stream][speaker];
+        }
+        else{
+          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
+            * gStreamGains[stream] * gVBAPGains8Speakers[stream][speaker];
+        }
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
       }
+      signalTimeDomainIn[n].r *= gWindowBuffer[n];
       pointer++;
       if (pointer >= BUFFER_SIZE)
       pointer = 0;
