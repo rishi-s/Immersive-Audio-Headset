@@ -2,12 +2,46 @@
  *  Created on: 21 April, 2018
  *      Author: Rishi Shukla
  */
-
+// Adapted from http://www.cplusplus.com/forum/unices/112048/
 #ifndef VBAPDATA_H_
 #define VBAPDATA_H_
 
 // Two matrices of VBAP gain values to generated required source locations
 // using either 4 or 8 virtual speakers.
+
+#include <iostream>
+#include <fstream>
+#include <sstream>
+
+float gVBAPGains[65341][8]={0};
+
+void getVBAPMatrix()
+{
+
+    std::ifstream file("VBAPArray.csv");
+
+    for(int row = 0; row < 65340; ++row)
+    {
+        std::string line;
+        std::getline(file, line);
+        if ( !file.good() )
+            break;
+
+        std::stringstream iss(line);
+
+        for (int col = 0; col < 8; ++col)
+        {
+            std::string val;
+            std::getline(iss, val, ',');
+            if ( iss.bad() )
+                break;
+
+            std::stringstream convertor(val);
+            convertor >> gVBAPGains[row][col];
+        }
+    }
+    std::cout << "Test output: " << gVBAPGains[65340][7];
+}
 
 // Rows 673, 688, 694, 700, 715, 892, 907, 913, 919, 934
 float gVBAPGains8Speakers[10][8]={
