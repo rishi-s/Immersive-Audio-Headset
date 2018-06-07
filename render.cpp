@@ -13,6 +13,7 @@
 #include <ImpulseData.h>    // distinct struct file to identify impulse responses
 #include <VBAPData.h>       // lookup tables for VBAP speaker weightings
 #include <StreamGainData.h> // table for audio track level balancing / muting
+#include <Scope.h>
 
 /*----------*/
 /*----------*/
@@ -22,7 +23,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 32768   // BUFFER SIZE
+#define BUFFER_SIZE 2048   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -53,8 +54,8 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gFFTSize = 2048;
-int gHopSize = gFFTSize / 4;
+int gFFTSize = 1024;
+int gHopSize = gFFTSize/2;
 float gFFTScaleFactor = 0;
 
 // additional buffers for summing VBAP feeds to each virtual speaker
@@ -83,6 +84,9 @@ AuxiliaryTask gFillBuffersTask;
 // instatiate auxiliary task to calculate FFTs
 AuxiliaryTask gFFTTask;
 
+// instantiate the scope
+Scope scope;
+
 //declare process_fft_backround method
 void process_fft_background(void *);
 
@@ -91,7 +95,7 @@ void process_fft_background(void *);
 /*IMU #variables*/
 
 // Change this to change how often the BNO055 IMU is read (in Hz)
-int readInterval = 100;
+int readInterval = 44100;
 
 I2C_BNO055 bno; // IMU sensor object
 int buttonPin = P2_02; // calibration button pin
@@ -140,7 +144,7 @@ void loadImpulse(){
     //determine the HRIR lengths (in samples) and populate the buffers
     for(int ch=0;ch<2;ch++) {
       int impulseChannel = (i*2)+ch;
-      gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
+      gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id) / getImpulseNumChannels(id);
       gImpulseData[impulseChannel].samples = new float[gFFTSize];
       getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
         gImpulseData[impulseChannel].sampleLen);
@@ -305,6 +309,9 @@ bool setup(BelaContext *context, void *userData)
     "fill-buffer")) == 0)
   return false;
 
+  // tell the scope how many channels and the sample rate
+  scope.setup(2, context->audioSampleRate);
+
   return true;
 }
 
@@ -397,7 +404,7 @@ void render(BelaContext *context, void *userData){
       } else if (position>181){
         gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1])+(361*gVBAPTracking[2]))%32670;
       } else {
-        gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1]))%65341;
+        gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1]))%32670;
       }
     }
     /*----------*/
@@ -413,7 +420,7 @@ void render(BelaContext *context, void *userData){
     // print IMU values, but not every sample
     printThrottle++;
     if(printThrottle >= 4100){
-      //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
+      rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
       //rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
       //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
       imu::Vector<3> qForward = gIdleConj.toEuler();
@@ -461,6 +468,8 @@ void render(BelaContext *context, void *userData){
           gOutputBufferR[gOutputBufferReadPointer];
       }
 	  }
+    // log the three oscillators to the scope
+		scope.log(context->audioOut[0],context->audioOut[1]);
 
     // clear the output samples in the buffers so they're ready for the next ola
     gOutputBufferL[gOutputBufferReadPointer] = 0;
