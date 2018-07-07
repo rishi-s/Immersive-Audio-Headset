@@ -60,11 +60,15 @@ float gFFTScaleFactor = 0;
 
 // additional buffers for summing VBAP feeds to each virtual speaker
 float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
-int gVBAPDefaultPositions[10]={32566, 32641, 32671, 32701, 32776, 43396, 43471, 43501, 43531, 43606};
-int gVBAPUpdatePositions[10]={0};
+int gVBAPDefaultPositions[NUM_STREAMS]={32566, 32641, 32671, 32701, 32776, 43396, 43471, 43501, 43531, 43606};
+int gVBAPDefaultAzimuth[NUM_STREAMS]{-105,-30,0,30,105,-105,-30,0,30,105};
+int gVBAPDefaultElevation[NUM_STREAMS]={0,0,0,0,0,30,30,30,30,30};
+float gVBAPDefaultVector[NUM_STREAMS][3];
+float gVBAPRotatedVector[NUM_STREAMS][3];
+int gVBAPUpdatePositions[NUM_STREAMS]={0};
+int gVBAPUpdateAzimuth[NUM_STREAMS]={0};
+int gVBAPUpdateElevation[NUM_STREAMS]={0};
 int gVBAPTracking[3]={0};
-int gVBAPAzimuthTracking=0;
-int gVBAPElevationTracking=0;
 
 // buffers and configuration for Neon FFT processing
 ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS];
@@ -95,7 +99,7 @@ void process_fft_background(void *);
 /*IMU #variables*/
 
 // Change this to change how often the BNO055 IMU is read (in Hz)
-int readInterval = 44100;
+int readInterval = 100;
 
 I2C_BNO055 bno; // IMU sensor object
 int buttonPin = P2_02; // calibration button pin
@@ -212,9 +216,9 @@ void transformHRIRs(){
     for (int n = 0; n < gFFTSize; n++)
     {
       impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
-      impulseTimeDomainL[i][n].i = (ne10_float32_t) gImpulseData[impulseL].samples[n];
+      //impulseTimeDomainL[i][n].i = (ne10_float32_t) gImpulseData[impulseL].samples[n];
       impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
-      impulseTimeDomainR[i][n].i = (ne10_float32_t) gImpulseData[impulseR].samples[n];
+      //impulseTimeDomainR[i][n].i = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
     // transform to frequency domain (left and right)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -233,6 +237,44 @@ void fillBuffers(void*) {
   }
 }
 
+// function to convert input stream point source locations to 3D vectors
+void createVectors(){
+  for(int i=0; i<NUM_STREAMS;i++){
+    float aziRad=gVBAPDefaultAzimuth[i]*M_PI/180;
+    float eleRad=gVBAPDefaultElevation[i]*M_PI/180;
+   gVBAPDefaultVector[i][0]=cos(eleRad)*cos(aziRad);
+   gVBAPDefaultVector[i][1]=cos(eleRad)*sin(aziRad);
+   gVBAPDefaultVector[i][2]=sin(eleRad);
+   rt_printf("\nSource %d – X: %f\t Y: %f\t Z: %f\n", i, \
+    gVBAPDefaultVector[i][0],gVBAPDefaultVector[i][1],gVBAPDefaultVector[i][2]);
+ }
+}
+
+void rotateVectors(){
+  for(int i=0; i<NUM_STREAMS;i++){
+    float yawRot[3]={0};
+    float yawSin = sin(ypr[0]);
+    float yawCos = cos(ypr[0]);
+    yawRot[0] = yawCos*gVBAPDefaultVector[i][0] + -yawSin*gVBAPDefaultVector[i][1];
+    yawRot[1] = yawSin*gVBAPDefaultVector[i][0] + yawCos*gVBAPDefaultVector[i][1];
+    yawRot[2] = gVBAPDefaultVector[i][2];
+    float pitchRot[3]={0};
+    float pitchSin = sin(ypr[1]);
+    float pitchCos = cos(ypr[1]);
+    pitchRot[0] = pitchCos*yawRot[0] + pitchSin*yawRot[2];
+    pitchRot[1] = yawRot[1];
+    pitchRot[2] = -pitchSin*yawRot[0] + pitchCos*yawRot[2];
+    float rollRot[3]={0};
+    float rollSin = sin(ypr[2]);
+    float rollCos = cos(ypr[2]);
+    rollRot[0] = pitchRot[0];
+    rollRot[1] = rollCos*pitchRot[1] + -rollSin*pitchRot[2];
+    rollRot[2] = rollSin*pitchRot[1] + rollCos*pitchRot[2];
+    gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
+    gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2)+pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
+  }
+  rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[2],gVBAPUpdateElevation[2]);
+}
 
 // configure Bela environment for playback
 bool setup(BelaContext *context, void *userData)
@@ -277,6 +319,7 @@ bool setup(BelaContext *context, void *userData)
   prepFFT();        // set up FFT
   transformHRIRs(); // convert HRIRs to frequency domain
   getVBAPMatrix(); // import VBAP speaker gain data
+  createVectors();
 
   // initialise FFT auxiliary task
   if((gFFTTask = Bela_createAuxiliaryTask(&process_fft_background, 90, \
@@ -350,14 +393,18 @@ void process_fft()
 
     // convolve speaker feed to binaural signal with relevant HRIR
     for(int n=0;n<gFFTSize;n++){
-      signalFrequencyDomainL[n].r = signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainL[speaker][n].r;
+      signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
+        impulseFrequencyDomainL[speaker][n].r) \
+        - (signalFrequencyDomain[n].i * impulseFrequencyDomainL[speaker][n].i);
       signalFrequencyDomainL[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainL[speaker][n].i;
-      signalFrequencyDomainR[n].r = signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainR[speaker][n].r;
+        impulseFrequencyDomainR[speaker][n].r \
+        + (signalFrequencyDomain[n].r * impulseFrequencyDomainL[speaker][n].i);
+      signalFrequencyDomainR[n].r = (signalFrequencyDomain[n].r * \
+        impulseFrequencyDomainR[speaker][n].r) \
+        - (signalFrequencyDomain[n].i * impulseFrequencyDomainR[speaker][n].i);
       signalFrequencyDomainR[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainR[speaker][n].i;
+        impulseFrequencyDomainR[speaker][n].r \
+        + (signalFrequencyDomain[n].r * impulseFrequencyDomainR[speaker][n].i);
     }
 
     // convert result back to time domain (left and right)
@@ -391,20 +438,24 @@ void render(BelaContext *context, void *userData){
 
   // process the next audio frame
   for(unsigned int n = 0; n < context->audioFrames; n++) {
-    gVBAPTracking[0]=(int)roundf(ypr[0]/M_PI*180); // calc horizontal head-track
-    gVBAPTracking[1]=(int)roundf(ypr[1]/M_PI*180); // calc horizontal head-track
-    gVBAPTracking[2]=(int)roundf(ypr[2]/M_PI*180); // calc horizontal head-track
 
 
+    //gVBAPTracking[0]=(int)roundf(ypr[0]/M_PI*180); // calc yaw head-track
+    //gVBAPTracking[1]=(int)roundf(ypr[1]/M_PI*180); // calc pitch head-track
+    //gVBAPTracking[2]=(int)roundf(ypr[2]/M_PI*180); // calc roll head-track
+
+    // calcuate the rotated position for each stream
     for(unsigned int i=0; i < NUM_STREAMS; i++){
+      // get the new horizontal position in relation to default for stream source
       int position=gVBAPDefaultPositions[i]%361+gVBAPTracking[0];
-      if(position>=360){position-=361;} else if( position<=0) {position+=361;}
-      if(position<181){
+      // if revised yaw is over 361, or less than 1, wrap it round
+      if(position>361){position-=361;} else if(position<1) {position+=361;}
+      // if revised yaw is a positive value find correct azimuth/elevation entry
+      if(position<=180){
         gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1])-(361*gVBAPTracking[2]))%32670;
-      } else if (position>181){
+      // if revised yaw is a negative value find correct azimuth/elevation entry
+      } else if (position>=181){
         gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1])+(361*gVBAPTracking[2]))%32670;
-      } else {
-        gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1]))%32670;
       }
     }
     /*----------*/
@@ -497,6 +548,7 @@ void render(BelaContext *context, void *userData){
     	gFFTInputBufferPointer = gInputBufferPointer;
     	gFFTOutputBufferPointer = gOutputBufferWritePointer;
       Bela_scheduleAuxiliaryTask(gFFTTask);
+      rotateVectors();
     	gSampleCount = 0;
     }
   }
