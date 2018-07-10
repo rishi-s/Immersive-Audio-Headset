@@ -259,8 +259,8 @@ void rotateVectors(){
     yawRot[1] = yawSin*gVBAPDefaultVector[i][0] + yawCos*gVBAPDefaultVector[i][1];
     yawRot[2] = gVBAPDefaultVector[i][2];
     float pitchRot[3]={0};
-    float pitchSin = sin(ypr[1]);
-    float pitchCos = cos(ypr[1]);
+    float pitchSin = sin(-ypr[1]);
+    float pitchCos = cos(-ypr[1]);
     pitchRot[0] = pitchCos*yawRot[0] + pitchSin*yawRot[2];
     pitchRot[1] = yawRot[1];
     pitchRot[2] = -pitchSin*yawRot[0] + pitchCos*yawRot[2];
@@ -271,7 +271,8 @@ void rotateVectors(){
     rollRot[1] = rollCos*pitchRot[1] + -rollSin*pitchRot[2];
     rollRot[2] = rollSin*pitchRot[1] + rollCos*pitchRot[2];
     gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
-    gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2)+pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
+    gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
+      +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
   }
   rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[2],gVBAPUpdateElevation[2]);
 }
@@ -371,14 +372,8 @@ void process_fft()
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
       for(int stream=0; stream<NUM_STREAMS;stream++){
-        if(gSpeakers==4){               // check speakers numbers for gain lookup
-          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-            * gStreamGains[gTracks-1][stream] * gVBAPGains4Speakers[stream][speaker];
-        }
-        else{
-          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-            * gStreamGains[gTracks-1][stream] * gVBAPGains[32491+gVBAPUpdatePositions[stream]][speaker];
-        }
+        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
+          * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
       }
       // Update "pointer" each time and wrap it around to keep it within the
       // circular buffer.
@@ -440,24 +435,6 @@ void render(BelaContext *context, void *userData){
   for(unsigned int n = 0; n < context->audioFrames; n++) {
 
 
-    //gVBAPTracking[0]=(int)roundf(ypr[0]/M_PI*180); // calc yaw head-track
-    //gVBAPTracking[1]=(int)roundf(ypr[1]/M_PI*180); // calc pitch head-track
-    //gVBAPTracking[2]=(int)roundf(ypr[2]/M_PI*180); // calc roll head-track
-
-    // calcuate the rotated position for each stream
-    for(unsigned int i=0; i < NUM_STREAMS; i++){
-      // get the new horizontal position in relation to default for stream source
-      int position=gVBAPDefaultPositions[i]%361+gVBAPTracking[0];
-      // if revised yaw is over 361, or less than 1, wrap it round
-      if(position>361){position-=361;} else if(position<1) {position+=361;}
-      // if revised yaw is a positive value find correct azimuth/elevation entry
-      if(position<=180){
-        gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1])-(361*gVBAPTracking[2]))%32670;
-      // if revised yaw is a negative value find correct azimuth/elevation entry
-      } else if (position>=181){
-        gVBAPUpdatePositions[i]=(position+(361*gVBAPTracking[1])+(361*gVBAPTracking[2]))%32670;
-      }
-    }
     /*----------*/
     /*----------*/
     /*IMU #setup routine*/
@@ -471,9 +448,9 @@ void render(BelaContext *context, void *userData){
     // print IMU values, but not every sample
     printThrottle++;
     if(printThrottle >= 4100){
-      rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
-      //rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
-      //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
+      //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
+      rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
+      rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
       imu::Vector<3> qForward = gIdleConj.toEuler();
       printThrottle = 0;
     }
@@ -548,6 +525,10 @@ void render(BelaContext *context, void *userData){
     	gFFTInputBufferPointer = gInputBufferPointer;
     	gFFTOutputBufferPointer = gOutputBufferWritePointer;
       Bela_scheduleAuxiliaryTask(gFFTTask);
+      // calcuate the rotated position for each stream
+      for(unsigned int i=0; i < NUM_STREAMS; i++){
+        gVBAPUpdatePositions[i]=((gVBAPUpdateElevation[i]+90)*361)+gVBAPUpdateAzimuth[i]+180;
+      }
       rotateVectors();
     	gSampleCount = 0;
     }
