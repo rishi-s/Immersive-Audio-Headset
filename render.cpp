@@ -60,9 +60,15 @@ float gFFTScaleFactor = 0;
 
 // additional buffers for summing VBAP feeds to each virtual speaker
 float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
-int gVBAPDefaultPositions[NUM_STREAMS]={32566, 32641, 32671, 32701, 32776, 43396, 43471, 43501, 43531, 43606};
-int gVBAPDefaultAzimuth[NUM_STREAMS]{-105,-30,0,30,105,-105,-30,0,30,105};
-int gVBAPDefaultElevation[NUM_STREAMS]={0,0,0,0,0,30,30,30,30,30};
+
+
+// BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
+int gVBAPDefaultAzimuth[NUM_STREAMS]{-144,-72,0,72,144,-144,-72,0,72,144};
+
+// BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
+int gVBAPDefaultElevation[NUM_STREAMS]={-10,-10,-10,-10,-10,30,30,30,30,30};
+
+//Rotation variables
 float gVBAPDefaultVector[NUM_STREAMS][3];
 float gVBAPRotatedVector[NUM_STREAMS][3];
 int gVBAPUpdatePositions[NUM_STREAMS]={0};
@@ -450,7 +456,7 @@ void render(BelaContext *context, void *userData){
     if(printThrottle >= 4100){
       //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
       rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
-      rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
+      //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
       imu::Vector<3> qForward = gIdleConj.toEuler();
       printThrottle = 0;
     }
