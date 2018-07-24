@@ -19,7 +19,7 @@ int getImpulseSamples(string file, float *buf, int channel, int startFrame, int 
 	if (!(sndfile = sf_open (file.c_str(), SFM_READ, &sfinfo))) {
 		cout << "Couldn't open file " << file << ": " << sf_strerror(sndfile) << endl;
 		return 1;
-	}
+	} 
 
 	int numChannelsInFile = sfinfo.channels;
 	if(numChannelsInFile < channel+1)

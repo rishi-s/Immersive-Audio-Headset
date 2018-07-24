@@ -23,7 +23,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 2048   // BUFFER SIZE
+#define BUFFER_SIZE 4096   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -54,12 +54,9 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gFFTSize = 1024;
-int gHopSize = gFFTSize/2;
+int gFFTSize = 2048;
+int gHopSize = gFFTSize/4;
 float gFFTScaleFactor = 0;
-
-// additional buffers for summing VBAP feeds to each virtual speaker
-float gVBAPBuffers[NUM_SPEAKERS][BUFFER_SIZE];
 
 
 // BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
@@ -154,10 +151,13 @@ void loadImpulse(){
     //determine the HRIR lengths (in samples) and populate the buffers
     for(int ch=0;ch<2;ch++) {
       int impulseChannel = (i*2)+ch;
-      gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id) / getImpulseNumChannels(id);
+      gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
       gImpulseData[impulseChannel].samples = new float[gFFTSize];
       getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
         gImpulseData[impulseChannel].sampleLen);
+      rt_printf("Length %d = %d\n",impulseChannel, gImpulseData[impulseChannel].sampleLen);
+      rt_printf("Impulse %d = %f\n",impulseChannel, gImpulseData[impulseChannel].samples[0]);
+      rt_printf("Impulse %d = %f\n",impulseChannel, gImpulseData[impulseChannel].samples[511]);
     }
 
   }
@@ -218,13 +218,21 @@ void transformHRIRs(){
        * sizeof (ne10_fft_cpx_float32_t));
     impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
       * sizeof (ne10_fft_cpx_float32_t));
-    // assign real and imaginary components to each HRIR FFT buffer
+    // zero pad
     for (int n = 0; n < gFFTSize; n++)
     {
+      impulseTimeDomainL[i][n].r = 0;
+      impulseTimeDomainL[i][n].i = 0;
+      impulseTimeDomainR[i][n].r = 0;
+      impulseTimeDomainR[i][n].i = 0;
+    }
+    //impulseTimeDomainL[i][0].r = (ne10_float32_t) 0.5;
+    //impulseTimeDomainR[i][0].r = (ne10_float32_t) 0.5;
+    // assign real and imaginary components to each HRIR FFT buffer
+    for (int n = 0; n < gFFTSize/2; n++)
+    {
       impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
-      //impulseTimeDomainL[i][n].i = (ne10_float32_t) gImpulseData[impulseL].samples[n];
       impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
-      //impulseTimeDomainR[i][n].i = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
     // transform to frequency domain (left and right)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -280,7 +288,7 @@ void rotateVectors(){
     gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
       +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
   }
-  rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[2],gVBAPUpdateElevation[2]);
+  rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);
 }
 
 // configure Bela environment for playback
@@ -379,7 +387,7 @@ void process_fft()
       // track gain weightings.
       for(int stream=0; stream<NUM_STREAMS;stream++){
         signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-          * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
+           * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
       }
       // Update "pointer" each time and wrap it around to keep it within the
       // circular buffer.
@@ -397,14 +405,14 @@ void process_fft()
       signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainL[speaker][n].r) \
         - (signalFrequencyDomain[n].i * impulseFrequencyDomainL[speaker][n].i);
-      signalFrequencyDomainL[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainR[speaker][n].r \
+      signalFrequencyDomainL[n].i = (signalFrequencyDomain[n].i * \
+        impulseFrequencyDomainL[speaker][n].r) \
         + (signalFrequencyDomain[n].r * impulseFrequencyDomainL[speaker][n].i);
       signalFrequencyDomainR[n].r = (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainR[speaker][n].r) \
         - (signalFrequencyDomain[n].i * impulseFrequencyDomainR[speaker][n].i);
-      signalFrequencyDomainR[n].i = signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainR[speaker][n].r \
+      signalFrequencyDomainR[n].i = (signalFrequencyDomain[n].i * \
+        impulseFrequencyDomainR[speaker][n].r) \
         + (signalFrequencyDomain[n].r * impulseFrequencyDomainR[speaker][n].i);
     }
 
