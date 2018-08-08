@@ -23,7 +23,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 4096   // BUFFER SIZE
+#define BUFFER_SIZE 44100   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -231,8 +231,8 @@ void transformHRIRs(){
     // assign real and imaginary components to each HRIR FFT buffer
     for (int n = 0; n < gFFTSize/2; n++)
     {
-      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
-      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
+      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n] * 4;
+      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n] * 4;
     }
     // transform to frequency domain (left and right)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -385,16 +385,21 @@ void process_fft()
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
-      for(int stream=0; stream<NUM_STREAMS;stream++){
-        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-           * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
+      if(n<gFFTSize){
+        for(int stream=0; stream<NUM_STREAMS;stream++){
+          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
+            * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
+        }
+        // Update "pointer" each time and wrap it around to keep it within the
+        // circular buffer.
+        pointer++;
+        if (pointer >= BUFFER_SIZE)
+        pointer = 0;
       }
-      // Update "pointer" each time and wrap it around to keep it within the
-      // circular buffer.
+
       signalTimeDomainIn[n].r *= gWindowBuffer[n];
-      pointer++;
-      if (pointer >= BUFFER_SIZE)
-      pointer = 0;
+
+
     }
     // convert speaker feed to frequency domian
     ne10_fft_c2c_1d_float32_neon (signalFrequencyDomain, signalTimeDomainIn, \
