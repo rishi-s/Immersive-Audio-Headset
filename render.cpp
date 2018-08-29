@@ -23,7 +23,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 44100   // BUFFER SIZE
+#define BUFFER_SIZE 8192   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -54,7 +54,7 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gFFTSize = 2048;
+int gFFTSize = 4096;
 int gHopSize = gFFTSize/4;
 float gFFTScaleFactor = 0;
 
@@ -105,7 +105,7 @@ void process_fft_background(void *);
 int readInterval = 100;
 
 I2C_BNO055 bno; // IMU sensor object
-int buttonPin = P2_02; // calibration button pin
+int buttonPin = 1; // calibration button pin
 int lastButtonValue = 0; // using a pulldown resistor
 
 // Quaternions and Vectors
@@ -229,10 +229,10 @@ void transformHRIRs(){
     //impulseTimeDomainL[i][0].r = (ne10_float32_t) 0.5;
     //impulseTimeDomainR[i][0].r = (ne10_float32_t) 0.5;
     // assign real and imaginary components to each HRIR FFT buffer
-    for (int n = 0; n < gFFTSize/2; n++)
+    for (int n = 0; n < 3584; n++)
     {
-      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n] * 4;
-      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n] * 4;
+      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
+      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
     // transform to frequency domain (left and right)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -346,13 +346,13 @@ bool setup(BelaContext *context, void *userData)
   gOutputBufferWritePointer = gHopSize;
 
   // allocate the window buffer based on the FFT size
-  gWindowBuffer = (float *)malloc(gFFTSize * sizeof(float));
+  gWindowBuffer = (float *)malloc(3584 * sizeof(float));
   if(gWindowBuffer == 0)
   	return false;
 
   // calculate a Hann window for overlap/add processing
-  for(int n = 0; n < gFFTSize; n++) {
-  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
+  for(int n = 0; n < 3584; n++) {
+  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(3584 - 1)));
   }
 
   // silence voice metadata streams if switched off by user input
@@ -379,16 +379,16 @@ void process_fft()
   // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<gSpeakers;speaker++){
     // copy individual streams into FFT buffer
-    int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
+    int pointer = (gFFTInputBufferPointer - 3584 + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gFFTSize; n++) {
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
-      if(n<gFFTSize){
+      if(n<3584){
         for(int stream=0; stream<NUM_STREAMS;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-            * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker];
+            * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker]*gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
@@ -397,7 +397,7 @@ void process_fft()
         pointer = 0;
       }
 
-      signalTimeDomainIn[n].r *= gWindowBuffer[n];
+      //signalTimeDomainIn[n].r *= gWindowBuffer[n];
 
 
     }
