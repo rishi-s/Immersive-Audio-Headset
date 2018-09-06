@@ -13,7 +13,7 @@
 #include <ImpulseData.h>    // distinct struct file to identify impulse responses
 #include <VBAPData.h>       // lookup tables for VBAP speaker weightings
 #include <StreamGainData.h> // table for audio track level balancing / muting
-#include <Scope.h>
+//#include <Scope.h>
 
 /*----------*/
 /*----------*/
@@ -23,7 +23,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 8192   // BUFFER SIZE
+#define BUFFER_SIZE 2048   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -54,8 +54,10 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gFFTSize = 4096;
-int gHopSize = gFFTSize/4;
+int gFFTSize = 1536;
+int gHRIRLength = 512;
+int gInputLength = gFFTSize-gHRIRLength;
+int gHopSize = gInputLength/2;
 float gFFTScaleFactor = 0;
 
 
@@ -92,7 +94,7 @@ AuxiliaryTask gFillBuffersTask;
 AuxiliaryTask gFFTTask;
 
 // instantiate the scope
-Scope scope;
+//Scope scope;
 
 //declare process_fft_backround method
 void process_fft_background(void *);
@@ -140,7 +142,7 @@ void resetOrientation();
 /*----------*/
 
 
-// function to load HRIRs for either 4 or 8 virtual speakers declared on startup
+// function to load HRIRs for 8 virtual speakers on startup
 void loadImpulse(){
   // load impulse .wav files from the relevant directory
   for(int i=0;i<gSpeakers;i++) {
@@ -152,12 +154,16 @@ void loadImpulse(){
     for(int ch=0;ch<2;ch++) {
       int impulseChannel = (i*2)+ch;
       gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
-      gImpulseData[impulseChannel].samples = new float[gFFTSize];
+      gImpulseData[impulseChannel].samples = new float[getImpulseNumFrames(id)];
       getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
         gImpulseData[impulseChannel].sampleLen);
-      rt_printf("Length %d = %d\n",impulseChannel, gImpulseData[impulseChannel].sampleLen);
-      rt_printf("Impulse %d = %f\n",impulseChannel, gImpulseData[impulseChannel].samples[0]);
-      rt_printf("Impulse %d = %f\n",impulseChannel, gImpulseData[impulseChannel].samples[511]);
+      //check buffer lengths and start/end values during setup
+      rt_printf("Length %d = %d\n",impulseChannel, \
+        gImpulseData[impulseChannel].sampleLen);
+      rt_printf("Impulse %d = %f\n",impulseChannel, \
+        gImpulseData[impulseChannel].samples[0]);
+      rt_printf("Impulse %d = %f\n",impulseChannel, \
+        gImpulseData[impulseChannel].samples[511]);
     }
 
   }
@@ -206,7 +212,7 @@ void prepFFT(){
 
 // function to generate IR frequency domain values
 void transformHRIRs(){
-  // allocate memory to HRIR FFT buffers (left and right)
+  // allocate memory and add sample values to each HRIR FFT buffer (L and R)
   for (int i = 0; i < gSpeakers; i++){
     int impulseL = i*2;
     int impulseR = impulseL+1;
@@ -218,7 +224,7 @@ void transformHRIRs(){
        * sizeof (ne10_fft_cpx_float32_t));
     impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
       * sizeof (ne10_fft_cpx_float32_t));
-    // zero pad
+    // zero pad HRIR FFT buffers
     for (int n = 0; n < gFFTSize; n++)
     {
       impulseTimeDomainL[i][n].r = 0;
@@ -226,15 +232,13 @@ void transformHRIRs(){
       impulseTimeDomainR[i][n].r = 0;
       impulseTimeDomainR[i][n].i = 0;
     }
-    //impulseTimeDomainL[i][0].r = (ne10_float32_t) 0.5;
-    //impulseTimeDomainR[i][0].r = (ne10_float32_t) 0.5;
-    // assign real and imaginary components to each HRIR FFT buffer
-    for (int n = 0; n < 3584; n++)
+    // assign real component values from each impulse file
+    for (int n = 0; n < gHRIRLength; n++)
     {
       impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
       impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
-    // transform to frequency domain (left and right)
+    // transform to frequency domain (L and R)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
       cfg, 0);
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainR[i], impulseTimeDomainR[i], \
@@ -251,45 +255,63 @@ void fillBuffers(void*) {
   }
 }
 
+
 // function to convert input stream point source locations to 3D vectors
 void createVectors(){
   for(int i=0; i<NUM_STREAMS;i++){
+    // convert default azi and ele to radians
     float aziRad=gVBAPDefaultAzimuth[i]*M_PI/180;
     float eleRad=gVBAPDefaultElevation[i]*M_PI/180;
-   gVBAPDefaultVector[i][0]=cos(eleRad)*cos(aziRad);
-   gVBAPDefaultVector[i][1]=cos(eleRad)*sin(aziRad);
-   gVBAPDefaultVector[i][2]=sin(eleRad);
-   rt_printf("\nSource %d – X: %f\t Y: %f\t Z: %f\n", i, \
-    gVBAPDefaultVector[i][0],gVBAPDefaultVector[i][1],gVBAPDefaultVector[i][2]);
+    // convert co-ordinates to 3D vector values
+    gVBAPDefaultVector[i][0]=cos(eleRad)*cos(aziRad);
+    gVBAPDefaultVector[i][1]=cos(eleRad)*sin(aziRad);
+    gVBAPDefaultVector[i][2]=sin(eleRad);
+    // check default vector values on setup
+    rt_printf("\nSource %d – X: %f\t Y: %f\t Z: %f\n", i, \
+      gVBAPDefaultVector[i][0], \
+      gVBAPDefaultVector[i][1], \
+      gVBAPDefaultVector[i][2]);
  }
 }
 
+
+// function to rotate input stream point source locations using head-tracker
+// YPR input data
 void rotateVectors(){
+  //calculate yaw rotation matrix values
+  float yawRot[3]={0};
+  float yawSin = sin(ypr[0]);
+  float yawCos = cos(ypr[0]);
+  //calculate pitch rotation matrix values
+  float pitchRot[3]={0};
+  float pitchSin = sin(-ypr[1]);
+  float pitchCos = cos(-ypr[1]);
+  //calculate roll rotation matrix values
+  float rollRot[3]={0};
+  float rollSin = sin(ypr[2]);
+  float rollCos = cos(ypr[2]);
   for(int i=0; i<NUM_STREAMS;i++){
-    float yawRot[3]={0};
-    float yawSin = sin(ypr[0]);
-    float yawCos = cos(ypr[0]);
+    //apply yaw rotation to source 3D vector locations
     yawRot[0] = yawCos*gVBAPDefaultVector[i][0] + -yawSin*gVBAPDefaultVector[i][1];
     yawRot[1] = yawSin*gVBAPDefaultVector[i][0] + yawCos*gVBAPDefaultVector[i][1];
     yawRot[2] = gVBAPDefaultVector[i][2];
-    float pitchRot[3]={0};
-    float pitchSin = sin(-ypr[1]);
-    float pitchCos = cos(-ypr[1]);
+    //apply pitch rotation to yaw rotated locations
     pitchRot[0] = pitchCos*yawRot[0] + pitchSin*yawRot[2];
     pitchRot[1] = yawRot[1];
     pitchRot[2] = -pitchSin*yawRot[0] + pitchCos*yawRot[2];
-    float rollRot[3]={0};
-    float rollSin = sin(ypr[2]);
-    float rollCos = cos(ypr[2]);
+    //apply roll rotation to yaw and pitch rotated locations
     rollRot[0] = pitchRot[0];
     rollRot[1] = rollCos*pitchRot[1] + -rollSin*pitchRot[2];
     rollRot[2] = rollSin*pitchRot[1] + rollCos*pitchRot[2];
+    //convert 3DoF rotated 3D vector locations to azi and ele values
     gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
     gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
       +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
   }
-  rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);
+  //check revised azi and ele value of first input on each refresh
+  //rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);
 }
+
 
 // configure Bela environment for playback
 bool setup(BelaContext *context, void *userData)
@@ -333,7 +355,7 @@ bool setup(BelaContext *context, void *userData)
   loadStream();     // load audio streams
   prepFFT();        // set up FFT
   transformHRIRs(); // convert HRIRs to frequency domain
-  getVBAPMatrix(); // import VBAP speaker gain data
+  getVBAPMatrix();  // import VBAP speaker gain data
   createVectors();
 
   // initialise FFT auxiliary task
@@ -346,13 +368,13 @@ bool setup(BelaContext *context, void *userData)
   gOutputBufferWritePointer = gHopSize;
 
   // allocate the window buffer based on the FFT size
-  gWindowBuffer = (float *)malloc(3584 * sizeof(float));
+  gWindowBuffer = (float *)malloc(gInputLength * sizeof(float));
   if(gWindowBuffer == 0)
   	return false;
 
   // calculate a Hann window for overlap/add processing
-  for(int n = 0; n < 3584; n++) {
-  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(3584 - 1)));
+  for(int n = 0; n < gInputLength; n++) {
+  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gInputLength - 1)));
   }
 
   // silence voice metadata streams if switched off by user input
@@ -368,7 +390,8 @@ bool setup(BelaContext *context, void *userData)
   return false;
 
   // tell the scope how many channels and the sample rate
-  scope.setup(2, context->audioSampleRate);
+  //scope.setup(2, context->audioSampleRate);
+
 
   return true;
 }
@@ -379,16 +402,17 @@ void process_fft()
   // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<gSpeakers;speaker++){
     // copy individual streams into FFT buffer
-    int pointer = (gFFTInputBufferPointer - 3584 + BUFFER_SIZE) % BUFFER_SIZE;
+    int pointer = (gFFTInputBufferPointer - gInputLength + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gFFTSize; n++) {
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
-      if(n<3584){
+      if(n<gInputLength){
         for(int stream=0; stream<NUM_STREAMS;stream++){
-          signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[stream][pointer] \
-            * gStreamGains[gTracks-1][stream] * gVBAPGains[gVBAPUpdatePositions[stream]][speaker]*gWindowBuffer[n];
+          signalTimeDomainIn[n].r += (ne10_float32_t) \
+          gInputBuffer[stream][pointer] *  gStreamGains[gTracks-1][stream] \
+          * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
@@ -396,15 +420,10 @@ void process_fft()
         if (pointer >= BUFFER_SIZE)
         pointer = 0;
       }
-
-      //signalTimeDomainIn[n].r *= gWindowBuffer[n];
-
-
     }
     // convert speaker feed to frequency domian
     ne10_fft_c2c_1d_float32_neon (signalFrequencyDomain, signalTimeDomainIn, \
       cfg, 0);
-
     // convolve speaker feed to binaural signal with relevant HRIR
     for(int n=0;n<gFFTSize;n++){
       signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
@@ -420,14 +439,12 @@ void process_fft()
         impulseFrequencyDomainR[speaker][n].r) \
         + (signalFrequencyDomain[n].r * impulseFrequencyDomainR[speaker][n].i);
     }
-
     // convert result back to time domain (left and right)
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
       cfg, 1);
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
         cfg, 1);
-
-    // add results to left and outputs
+    // add results to left and output buffers
     pointer = gFFTOutputBufferPointer;
     for(int n=0; n<gFFTSize; n++) {
       gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
@@ -468,7 +485,7 @@ void render(BelaContext *context, void *userData){
     printThrottle++;
     if(printThrottle >= 4100){
       //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
-      rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
+      //rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
       //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
       imu::Vector<3> qForward = gIdleConj.toEuler();
       printThrottle = 0;
@@ -515,8 +532,9 @@ void render(BelaContext *context, void *userData){
           gOutputBufferR[gOutputBufferReadPointer];
       }
 	  }
-    // log the three oscillators to the scope
-		scope.log(context->audioOut[0],context->audioOut[1]);
+    // log the oscillators to the scope
+		//scope.log(context->audioOut[0],context->audioOut[1]);
+
 
     // clear the output samples in the buffers so they're ready for the next ola
     gOutputBufferL[gOutputBufferReadPointer] = 0;
@@ -543,17 +561,16 @@ void render(BelaContext *context, void *userData){
     if(gSampleCount >= gHopSize) {
     	gFFTInputBufferPointer = gInputBufferPointer;
     	gFFTOutputBufferPointer = gOutputBufferWritePointer;
-      Bela_scheduleAuxiliaryTask(gFFTTask);
+      rotateVectors();
       // calcuate the rotated position for each stream
       for(unsigned int i=0; i < NUM_STREAMS; i++){
         gVBAPUpdatePositions[i]=((gVBAPUpdateElevation[i]+90)*361)+gVBAPUpdateAzimuth[i]+180;
       }
-      rotateVectors();
+      Bela_scheduleAuxiliaryTask(gFFTTask);
     	gSampleCount = 0;
     }
   }
 }
-
 
 
 // Auxiliary task to read from the I2C board
