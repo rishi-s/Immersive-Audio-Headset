@@ -13,6 +13,7 @@
 #include <ImpulseData.h>    // distinct struct file to identify impulse responses
 #include <VBAPData.h>       // lookup tables for VBAP speaker weightings
 #include <StreamGainData.h> // table for audio track level balancing / muting
+#include <TestRoutine.h>
 //#include <Scope.h>
 
 /*----------*/
@@ -62,10 +63,11 @@ float gFFTScaleFactor = 0;
 
 
 // BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[NUM_STREAMS]{-144,-72,0,72,144,-144,-72,0,72,144};
+int gVBAPDefaultAzimuth[10]={-144,-72,-0,72,144,-144,-72,-0,72,144};
 
 // BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[NUM_STREAMS]={-10,-10,-10,-10,-10,30,30,30,30,30};
+int gVBAPDefaultElevation[10]={-10,-10,-10,-10,-10,30,30,30,30};
+
 
 //Rotation variables
 float gVBAPDefaultVector[NUM_STREAMS][3];
@@ -74,6 +76,9 @@ int gVBAPUpdatePositions[NUM_STREAMS]={0};
 int gVBAPUpdateAzimuth[NUM_STREAMS]={0};
 int gVBAPUpdateElevation[NUM_STREAMS]={0};
 int gVBAPTracking[3]={0};
+
+
+
 
 // buffers and configuration for Neon FFT processing
 ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS];
@@ -92,6 +97,7 @@ ne10_fft_cfg_float32_t cfg;
 AuxiliaryTask gFillBuffersTask;
 // instatiate auxiliary task to calculate FFTs
 AuxiliaryTask gFFTTask;
+
 
 // instantiate the scope
 //Scope scope;
@@ -235,8 +241,8 @@ void transformHRIRs(){
     // assign real component values from each impulse file
     for (int n = 0; n < gHRIRLength; n++)
     {
-      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
-      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
+      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n] * 1.5;
+      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n] * 1.5;
     }
     // transform to frequency domain (L and R)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -389,9 +395,9 @@ bool setup(BelaContext *context, void *userData)
     "fill-buffer")) == 0)
   return false;
 
+
   // tell the scope how many channels and the sample rate
   //scope.setup(2, context->audioSampleRate);
-
 
   return true;
 }
@@ -411,7 +417,7 @@ void process_fft()
       if(n<gInputLength){
         for(int stream=0; stream<NUM_STREAMS;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
-          gInputBuffer[stream][pointer] *  gStreamGains[gTracks-1][stream] \
+          gInputBuffer[stream][pointer] * 0.3f\
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
@@ -426,24 +432,30 @@ void process_fft()
       cfg, 0);
     // convolve speaker feed to binaural signal with relevant HRIR
     for(int n=0;n<gFFTSize;n++){
+      // left real
       signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainL[speaker][n].r) \
         - (signalFrequencyDomain[n].i * impulseFrequencyDomainL[speaker][n].i);
+      // left imaginary
       signalFrequencyDomainL[n].i = (signalFrequencyDomain[n].i * \
         impulseFrequencyDomainL[speaker][n].r) \
         + (signalFrequencyDomain[n].r * impulseFrequencyDomainL[speaker][n].i);
+      // right real
       signalFrequencyDomainR[n].r = (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainR[speaker][n].r) \
         - (signalFrequencyDomain[n].i * impulseFrequencyDomainR[speaker][n].i);
+      // right imaginary
       signalFrequencyDomainR[n].i = (signalFrequencyDomain[n].i * \
         impulseFrequencyDomainR[speaker][n].r) \
         + (signalFrequencyDomain[n].r * impulseFrequencyDomainR[speaker][n].i);
     }
-    // convert result back to time domain (left and right)
+    // convert results back to time domain (left and right)
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
       cfg, 1);
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
         cfg, 1);
+
+
     // add results to left and output buffers
     pointer = gFFTOutputBufferPointer;
     for(int n=0; n<gFFTSize; n++) {
@@ -466,6 +478,7 @@ void process_fft_background(void *) {
 void render(BelaContext *context, void *userData){
   // check if buffers need filling using low priority auxiliary task
   Bela_scheduleAuxiliaryTask(gFillBuffersTask);
+
 
   // process the next audio frame
   for(unsigned int n = 0; n < context->audioFrames; n++) {
@@ -532,9 +545,15 @@ void render(BelaContext *context, void *userData){
           gOutputBufferR[gOutputBufferReadPointer];
       }
 	  }
+
     // log the oscillators to the scope
 		//scope.log(context->audioOut[0],context->audioOut[1]);
 
+    /*--- SCRIPT TO ENABLE TEST MODE ---
+    gVBAPUpdatePositions[0]=((gTestElevation+90)*361)+gTestAzimuth;
+    writeOutput(gOutputBufferL[gOutputBufferReadPointer], \
+      gOutputBufferR[gOutputBufferReadPointer]);
+    --- ---*/
 
     // clear the output samples in the buffers so they're ready for the next ola
     gOutputBufferL[gOutputBufferReadPointer] = 0;
@@ -569,6 +588,8 @@ void render(BelaContext *context, void *userData){
       Bela_scheduleAuxiliaryTask(gFFTTask);
     	gSampleCount = 0;
     }
+
+
   }
 }
 
@@ -677,4 +698,15 @@ void cleanup(BelaContext *context, void *userData)
   NE10_FREE(signalTimeDomainOutL);
   NE10_FREE(signalTimeDomainOutR);
   NE10_FREE(cfg);
+
+  std::ofstream OutL("testImpL.csv");
+  std::ofstream OutR("testImpR.csv");
+  for (int i = 0; i < 187; i++) {
+    for (int j = 0; j < gFFTSize; j++){
+      OutL << (float)gDataOutputL[i][j] << ',';
+      OutR << (float)gDataOutputR[i][j] << ',';
+    }
+    OutL << '\n';
+    OutR << '\n';
+  }
 }
