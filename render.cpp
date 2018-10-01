@@ -26,7 +26,7 @@
 
 #define BUFFER_SIZE 2048   // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
-#define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
+#define NUM_STREAMS 10     // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
 
 extern int gSpeakers;       // Number of Speakers chosen by user
@@ -55,10 +55,10 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gFFTSize = 1536;
 int gHRIRLength = 512;
-int gInputLength = gFFTSize-gHRIRLength;
-int gHopSize = gInputLength/2;
+int gFFTSize = 1024;
+int gConvolutionSize = gFFTSize+gHRIRLength;
+int gHopSize = gFFTSize/2;
 float gFFTScaleFactor = 0;
 
 
@@ -169,7 +169,7 @@ void loadImpulse(){
       rt_printf("Impulse %d = %f\n",impulseChannel, \
         gImpulseData[impulseChannel].samples[0]);
       rt_printf("Impulse %d = %f\n",impulseChannel, \
-        gImpulseData[impulseChannel].samples[511]);
+        gImpulseData[impulseChannel].samples[gHRIRLength-1]);
     }
 
   }
@@ -190,27 +190,27 @@ void loadStream(){
 
 // funciton to prepare FFT buffers for input signals and allocate memory
 void prepFFT(){
-  gFFTScaleFactor = 1.0f / (float)gFFTSize * 1000;
-  signalTimeDomainIn = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  gFFTScaleFactor = 1.0f / (float)gConvolutionSize * 1000;
+  signalTimeDomainIn = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  signalFrequencyDomain = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  signalFrequencyDomain = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  signalFrequencyDomainL = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  signalFrequencyDomainL = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  signalFrequencyDomainR = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  signalFrequencyDomainR = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  signalTimeDomainOutL = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  signalTimeDomainOutL = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  signalTimeDomainOutR = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize * \
+  signalTimeDomainOutR = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize * \
     sizeof (ne10_fft_cpx_float32_t));
-  cfg = ne10_fft_alloc_c2c_float32_neon (gFFTSize);
+  cfg = ne10_fft_alloc_c2c_float32_neon (gConvolutionSize);
   memset(gInputBuffer, 0, BUFFER_SIZE * sizeof(float));
-  memset(signalTimeDomainIn, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
-  memset(signalFrequencyDomain, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
-  memset(signalFrequencyDomainL, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
-  memset(signalFrequencyDomainR, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
-  memset(signalTimeDomainOutL, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
-  memset(signalTimeDomainOutR, 0, gFFTSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalTimeDomainIn, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalFrequencyDomain, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalFrequencyDomainL, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalFrequencyDomainR, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalTimeDomainOutL, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
+  memset(signalTimeDomainOutR, 0, gConvolutionSize * sizeof (ne10_fft_cpx_float32_t));
   memset(gOutputBufferL, 0, BUFFER_SIZE * sizeof(float));
   memset(gOutputBufferR, 0, BUFFER_SIZE * sizeof(float));
 }
@@ -222,27 +222,20 @@ void transformHRIRs(){
   for (int i = 0; i < gSpeakers; i++){
     int impulseL = i*2;
     int impulseR = impulseL+1;
-    impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+    impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
       * sizeof (ne10_fft_cpx_float32_t));
-    impulseTimeDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+    impulseTimeDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
       * sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+    impulseFrequencyDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
        * sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gFFTSize \
+    impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
       * sizeof (ne10_fft_cpx_float32_t));
-    // zero pad HRIR FFT buffers
-    for (int n = 0; n < gFFTSize; n++)
-    {
-      impulseTimeDomainL[i][n].r = 0;
-      impulseTimeDomainL[i][n].i = 0;
-      impulseTimeDomainR[i][n].r = 0;
-      impulseTimeDomainR[i][n].i = 0;
-    }
+
     // assign real component values from each impulse file
     for (int n = 0; n < gHRIRLength; n++)
     {
-      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n] * 1.5;
-      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n] * 1.5;
+      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
+      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
     }
     // transform to frequency domain (L and R)
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
@@ -374,13 +367,13 @@ bool setup(BelaContext *context, void *userData)
   gOutputBufferWritePointer = gHopSize;
 
   // allocate the window buffer based on the FFT size
-  gWindowBuffer = (float *)malloc(gInputLength * sizeof(float));
+  gWindowBuffer = (float *)malloc(gFFTSize * sizeof(float));
   if(gWindowBuffer == 0)
   	return false;
 
   // calculate a Hann window for overlap/add processing
-  for(int n = 0; n < gInputLength; n++) {
-  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gInputLength - 1)));
+  for(int n = 0; n < gFFTSize; n++) {
+  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
   }
 
   // silence voice metadata streams if switched off by user input
@@ -408,16 +401,16 @@ void process_fft()
   // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<gSpeakers;speaker++){
     // copy individual streams into FFT buffer
-    int pointer = (gFFTInputBufferPointer - gInputLength + BUFFER_SIZE) % BUFFER_SIZE;
-    for(int n = 0; n < gFFTSize; n++) {
+    int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
+    for(int n = 0; n < gConvolutionSize; n++) {
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
-      if(n<gInputLength){
+      if(n<gFFTSize){
         for(int stream=0; stream<NUM_STREAMS;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
-          gInputBuffer[stream][pointer] * 0.3f\
+          gInputBuffer[stream][pointer] \
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
@@ -431,7 +424,7 @@ void process_fft()
     ne10_fft_c2c_1d_float32_neon (signalFrequencyDomain, signalTimeDomainIn, \
       cfg, 0);
     // convolve speaker feed to binaural signal with relevant HRIR
-    for(int n=0;n<gFFTSize;n++){
+    for(int n=0;n<gConvolutionSize;n++){
       // left real
       signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainL[speaker][n].r) \
@@ -458,7 +451,7 @@ void process_fft()
 
     // add results to left and output buffers
     pointer = gFFTOutputBufferPointer;
-    for(int n=0; n<gFFTSize; n++) {
+    for(int n=0; n<gConvolutionSize; n++) {
       gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
       gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
       pointer++;
@@ -550,7 +543,7 @@ void render(BelaContext *context, void *userData){
 		//scope.log(context->audioOut[0],context->audioOut[1]);
 
     /*--- SCRIPT TO ENABLE TEST MODE ---
-    gVBAPUpdatePositions[0]=((gTestElevation+90)*361)+gTestAzimuth;
+    gVBAPUpdatePositions[0]=((gTestElevation+90)*361)+gTestAzimuth+180;
     writeOutput(gOutputBufferL[gOutputBufferReadPointer], \
       gOutputBufferR[gOutputBufferReadPointer]);
     --- ---*/
@@ -594,7 +587,9 @@ void render(BelaContext *context, void *userData){
 }
 
 
-// Auxiliary task to read from the I2C board
+/*----------*/
+/*----------*/
+/* Auxiliary task to read from the I2C board*/
 void readIMU(void*)
 {
 	// get calibration status
@@ -678,6 +673,8 @@ void resetOrientation() {
   	gCalLeft = gCal.conjugate();
   	gCalRight = gCal;
 }
+/*----------*/
+/*----------*/
 
 // Clear all input buffers
 void cleanup(BelaContext *context, void *userData)
@@ -702,7 +699,7 @@ void cleanup(BelaContext *context, void *userData)
   std::ofstream OutL("testImpL.csv");
   std::ofstream OutR("testImpR.csv");
   for (int i = 0; i < 187; i++) {
-    for (int j = 0; j < gFFTSize; j++){
+    for (int j = 0; j < gConvolutionSize; j++){
       OutL << (float)gDataOutputL[i][j] << ',';
       OutR << (float)gDataOutputR[i][j] << ',';
     }

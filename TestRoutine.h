@@ -23,7 +23,8 @@ bool gAudioOut=0;
 
 void resetIncrement(){
   gTestElevation= -45;
-  gTestAzimuth+=15;
+  if(gTestAzimuth>-180 && gTestAzimuth <= 165) gTestAzimuth-=15;
+  else if(gTestAzimuth==-180) gTestAzimuth=165;
 }
 
 void incrementLocation(){
@@ -51,7 +52,7 @@ void incrementLocation(){
 }
 
 void writeOutput(float outL, float outR){
-  if(gRowCount<187){
+  if(/*gAudioOut==1 &&*/ gRowCount<187){
     gDataOutputL[gRowCount][gColumnCount] = outL;
     gDataOutputR[gRowCount][gColumnCount] = outR;
     if(++gColumnCount >=1536){
@@ -60,6 +61,7 @@ void writeOutput(float outL, float outR){
       gRowCount++;
     }
   }
+  //if(++gAudioCount>=512)gAudioOut=1;
 }
 
 #endif /* TESTROUTINE_H_ */
