@@ -14,6 +14,8 @@
 #include <VBAPData.h>       // lookup tables for VBAP speaker weightings
 #include <StreamGainData.h> // table for audio track level balancing / muting
 #include <TestRoutine.h>
+#include <OSC.h>
+
 //#include <Scope.h>
 
 /*----------*/
@@ -24,20 +26,23 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 2048   // BUFFER SIZE
+#define BUFFER_SIZE 2048    // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
-#define NUM_STREAMS 10     // MAXIMUM NUMBER OF AUDIO STREAMS
+#define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
+#define NUM_HRTFS 7
 
 extern int gSpeakers;       // Number of Speakers chosen by user
 extern int gTracks;         // Concurrent tracks chosen by user
+extern int gHRTF;         // HRTF chosen by user
 extern bool gVoiceMeta;     // Metadata playback on/off chosen by user
+extern bool gCalibrate;   // Headset calibration
 
 // instantiate the sampleStream class
 SampleStream *sampleStream[NUM_STREAMS];
 
 // instantiate binaural impulse response data buffers (left and right channels)
-ImpulseData gImpulseData[NUM_SPEAKERS*2];
+ImpulseData gImpulseData[NUM_SPEAKERS*NUM_HRTFS*2];
 
 // global variables for stream playback code
 int gStopThreads = 0;
@@ -63,10 +68,10 @@ float gFFTScaleFactor = 0;
 
 
 // BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[10]={-144,-72,-0,72,144,-144,-72,-0,72,144};
+int gVBAPDefaultAzimuth[10]={0,72,-72,144,-144,0,72,-72,144,-144};
 
 // BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[10]={-10,-10,-10,-10,-10,30,30,30,30};
+int gVBAPDefaultElevation[10]={-10,-10,-10,-10,-10,20,20,20,20,20};
 
 
 //Rotation variables
@@ -78,13 +83,11 @@ int gVBAPUpdateElevation[NUM_STREAMS]={0};
 int gVBAPTracking[3]={0};
 
 
-
-
 // buffers and configuration for Neon FFT processing
-ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS];
-ne10_fft_cpx_float32_t* impulseTimeDomainR[NUM_SPEAKERS];
-ne10_fft_cpx_float32_t* impulseFrequencyDomainL[NUM_SPEAKERS];
-ne10_fft_cpx_float32_t* impulseFrequencyDomainR[NUM_SPEAKERS];
+ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS*NUM_HRTFS];
+ne10_fft_cpx_float32_t* impulseTimeDomainR[NUM_SPEAKERS*NUM_HRTFS];
+ne10_fft_cpx_float32_t* impulseFrequencyDomainL[NUM_SPEAKERS*NUM_HRTFS];
+ne10_fft_cpx_float32_t* impulseFrequencyDomainR[NUM_SPEAKERS*NUM_HRTFS];
 ne10_fft_cpx_float32_t* signalTimeDomainIn;
 ne10_fft_cpx_float32_t* signalFrequencyDomain;  // (buffer to calculate L/R)
 ne10_fft_cpx_float32_t* signalFrequencyDomainL;
@@ -148,30 +151,34 @@ void resetOrientation();
 /*----------*/
 
 
-// function to load HRIRs for 8 virtual speakers on startup
+// function to load 8 HRIRs for 7 HRTF sets on startup
 void loadImpulse(){
-  // load impulse .wav files from the relevant directory
-  for(int i=0;i<gSpeakers;i++) {
-    std::string speakers=to_string(gSpeakers);
-    std::string number=to_string(i+1);
-    std::string file= "./" + speakers + "speakers/impulse" + number + ".wav";
-    const char * id = file.c_str();
-    //determine the HRIR lengths (in samples) and populate the buffers
-    for(int ch=0;ch<2;ch++) {
-      int impulseChannel = (i*2)+ch;
-      gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
-      gImpulseData[impulseChannel].samples = new float[getImpulseNumFrames(id)];
-      getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
-        gImpulseData[impulseChannel].sampleLen);
-      //check buffer lengths and start/end values during setup
-      rt_printf("Length %d = %d\n",impulseChannel, \
-        gImpulseData[impulseChannel].sampleLen);
-      rt_printf("Impulse %d = %f\n",impulseChannel, \
-        gImpulseData[impulseChannel].samples[0]);
-      rt_printf("Impulse %d = %f\n",impulseChannel, \
-        gImpulseData[impulseChannel].samples[gHRIRLength-1]);
-    }
+  // for each HRTF set
+  for(int i=0;i<NUM_HRTFS;i++){
+    std::string hrtf=to_string(i);
+    // load impulse .wav files from the relevant directory
+    for(int j=0;j<NUM_SPEAKERS;j++) {
+      std::string number=to_string(j+1);
+      std::string file= "./set" + hrtf + "/impulse" + number + ".wav";
+      const char * id = file.c_str();
+      //determine the HRIR lengths (in samples) and populate the buffers
+      for(int ch=0;ch<2;ch++) {
+        //allocate impulse number by hrtf, speaker and channel
+        int impulseChannel = (i*NUM_SPEAKERS*2)+(j*2)+ch;
+        gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
+        gImpulseData[impulseChannel].samples = new float[getImpulseNumFrames(id)];
+        getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
+          gImpulseData[impulseChannel].sampleLen);
+        //check buffer lengths and start/end values during setup
+        rt_printf("Length %d = %d\n",impulseChannel, \
+          gImpulseData[impulseChannel].sampleLen);
+        rt_printf("Impulse %d = %f\n",impulseChannel, \
+          gImpulseData[impulseChannel].samples[0]);
+        rt_printf("Impulse %d = %f\n",impulseChannel, \
+          gImpulseData[impulseChannel].samples[gHRIRLength-1]);
+      }
 
+    }
   }
 }
 
@@ -218,8 +225,8 @@ void prepFFT(){
 
 // function to generate IR frequency domain values
 void transformHRIRs(){
-  // allocate memory and add sample values to each HRIR FFT buffer (L and R)
-  for (int i = 0; i < gSpeakers; i++){
+  // allocate memory and add sample values to each HRTF set HRIR FFT buffer (L and R)
+  for (int i = 0; i < NUM_SPEAKERS*NUM_HRTFS; i++){
     int impulseL = i*2;
     int impulseR = impulseL+1;
     impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
@@ -356,6 +363,8 @@ bool setup(BelaContext *context, void *userData)
   transformHRIRs(); // convert HRIRs to frequency domain
   getVBAPMatrix();  // import VBAP speaker gain data
   createVectors();
+  setupOSC();
+
 
   // initialise FFT auxiliary task
   if((gFFTTask = Bela_createAuxiliaryTask(&process_fft_background, 90, \
@@ -376,12 +385,12 @@ bool setup(BelaContext *context, void *userData)
   	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
   }
 
-  // silence voice metadata streams if switched off by user input
+  /*// silence voice metadata streams if switched off by user input
   if(gVoiceMeta==0){
     for(int i=NUM_STREAMS/2;i<NUM_STREAMS;i++){
       gStreamGains[gTracks-1][i]=0.0;
     }
-  }
+  }*/
 
   // initialise streaming auxiliary task
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
@@ -399,7 +408,7 @@ bool setup(BelaContext *context, void *userData)
 void process_fft()
 {
   // create the binaural signal for each speaker and sum to the L/R outputs
-  for(int speaker=0; speaker<gSpeakers;speaker++){
+  for(int speaker=0; speaker<NUM_SPEAKERS;speaker++){
     // copy individual streams into FFT buffer
     int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gConvolutionSize; n++) {
@@ -411,6 +420,7 @@ void process_fft()
         for(int stream=0; stream<NUM_STREAMS;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[stream][pointer] \
+          * gStreamGains[gTracks-1][gVoiceMeta][stream] \
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
@@ -427,20 +437,24 @@ void process_fft()
     for(int n=0;n<gConvolutionSize;n++){
       // left real
       signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainL[speaker][n].r) \
-        - (signalFrequencyDomain[n].i * impulseFrequencyDomainL[speaker][n].i);
+        impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
+        - (signalFrequencyDomain[n].i * \
+          impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // left imaginary
       signalFrequencyDomainL[n].i = (signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainL[speaker][n].r) \
-        + (signalFrequencyDomain[n].r * impulseFrequencyDomainL[speaker][n].i);
+        impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
+        + (signalFrequencyDomain[n].r * \
+          impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // right real
       signalFrequencyDomainR[n].r = (signalFrequencyDomain[n].r * \
-        impulseFrequencyDomainR[speaker][n].r) \
-        - (signalFrequencyDomain[n].i * impulseFrequencyDomainR[speaker][n].i);
+        impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
+        - (signalFrequencyDomain[n].i * \
+          impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // right imaginary
       signalFrequencyDomainR[n].i = (signalFrequencyDomain[n].i * \
-        impulseFrequencyDomainR[speaker][n].r) \
-        + (signalFrequencyDomain[n].r * impulseFrequencyDomainR[speaker][n].i);
+        impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
+        + (signalFrequencyDomain[n].r * \
+          impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
     }
     // convert results back to time domain (left and right)
     ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
@@ -485,6 +499,7 @@ void render(BelaContext *context, void *userData){
     if(++readCount >= readIntervalSamples) {
       readCount = 0;
       Bela_scheduleAuxiliaryTask(i2cTask);
+      checkOSC();
     }
 
     // print IMU values, but not every sample
@@ -498,7 +513,7 @@ void render(BelaContext *context, void *userData){
     }
 
     //read the value of the button
-    int buttonValue = digitalRead(context, 0, buttonPin);
+    int buttonValue = gCalibrate;
 
     // if button wasn't pressed before and is pressed now
     if( buttonValue != lastButtonValue && buttonValue == 1 ){
@@ -682,7 +697,7 @@ void cleanup(BelaContext *context, void *userData)
   for(int i=0;i<NUM_STREAMS;i++) {
     delete sampleStream[i];
   }
-  for(int i=0;i<NUM_SPEAKERS;i++) {
+  for(int i=0;i<NUM_SPEAKERS*NUM_HRTFS;i++) {
     NE10_FREE(impulseTimeDomainL[i]);
     NE10_FREE(impulseTimeDomainR[i]);
     NE10_FREE(impulseFrequencyDomainL[i]);

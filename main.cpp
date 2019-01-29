@@ -16,8 +16,8 @@
 using namespace std;
 
 int gSpeakers=8;	// global variable to store VBAP speaker setup (4 or 8)
-int gTracks=5;		// global variable to store number of tracks played back (1 to 5)
-bool gVoiceMeta=1;// global variable to store voice metadate state (off or on)
+//int gTracks=3;		// global variable to store number of tracks played back (1 to 5)
+//bool gVoiceMeta=0;// global variable to store voice metadate state (off or on)
 
 // Handle Ctrl-C by requesting that the audio rendering stop
 void interrupt_handler(int var)
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 	settings.cleanup = cleanup;
 
 	// Parse command-line arguments
-	while (1) {
+	/*while (1) {
 		int c;
 		if ((c = Bela_getopt_long(argc, argv, "hf:", customOptions, &settings)) < 0)
 				break;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
 				usage(basename(argv[0]));
 				exit(1);
 		}
-	}
+	}*/
 
 
 	// Initialise the PRU audio device
