@@ -26,7 +26,7 @@
 /*----------*/
 /*----------*/
 
-#define BUFFER_SIZE 2048    // BUFFER SIZE
+#define BUFFER_SIZE 1536    // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
 #define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
 #define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
@@ -407,10 +407,18 @@ bool setup(BelaContext *context, void *userData)
 
 void process_fft()
 {
+  // clear FFT buffers
+  for(int n=0;n<gConvolutionSize;n++){
+    signalFrequencyDomainL[n].r=0.0;
+    signalFrequencyDomainL[n].i=0.0;
+    signalFrequencyDomainR[n].r=0.0;
+    signalFrequencyDomainR[n].i=0.0;
+  }
+  int pointer;
   // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<NUM_SPEAKERS;speaker++){
     // copy individual streams into FFT buffer
-    int pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
+    pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gConvolutionSize; n++) {
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
@@ -436,42 +444,44 @@ void process_fft()
     // convolve speaker feed to binaural signal with relevant HRIR
     for(int n=0;n<gConvolutionSize;n++){
       // left real
-      signalFrequencyDomainL[n].r = (signalFrequencyDomain[n].r * \
+      signalFrequencyDomainL[n].r += (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
         - (signalFrequencyDomain[n].i * \
           impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // left imaginary
-      signalFrequencyDomainL[n].i = (signalFrequencyDomain[n].i * \
+      signalFrequencyDomainL[n].i += (signalFrequencyDomain[n].i * \
         impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
         + (signalFrequencyDomain[n].r * \
           impulseFrequencyDomainL[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // right real
-      signalFrequencyDomainR[n].r = (signalFrequencyDomain[n].r * \
+      signalFrequencyDomainR[n].r += (signalFrequencyDomain[n].r * \
         impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
         - (signalFrequencyDomain[n].i * \
           impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
       // right imaginary
-      signalFrequencyDomainR[n].i = (signalFrequencyDomain[n].i * \
+      signalFrequencyDomainR[n].i += (signalFrequencyDomain[n].i * \
         impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].r) \
         + (signalFrequencyDomain[n].r * \
           impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
     }
-    // convert results back to time domain (left and right)
-    ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
+
+
+
+
+  }
+  // convert results back to time domain (left and right)
+  ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
+    cfg, 1);
+  ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
       cfg, 1);
-    ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
-        cfg, 1);
-
-
-    // add results to left and output buffers
-    pointer = gFFTOutputBufferPointer;
-    for(int n=0; n<gConvolutionSize; n++) {
-      gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
-      gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
-      pointer++;
-      if(pointer >= BUFFER_SIZE)
-      pointer = 0;
-    }
+  // add results to left and output buffers
+  pointer = gFFTOutputBufferPointer;
+  for(int n=0; n<gConvolutionSize; n++) {
+    gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
+    gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
+    pointer++;
+    if(pointer >= BUFFER_SIZE)
+    pointer = 0;
   }
 }
 
