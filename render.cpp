@@ -13,36 +13,27 @@
 #include <ImpulseData.h>    // distinct struct file to identify impulse responses
 #include <VBAPData.h>       // lookup tables for VBAP speaker weightings
 #include <StreamGainData.h> // table for audio track level balancing / muting
-#include <TestRoutine.h>
-#include <OSC.h>
-
-//#include <Scope.h>
-
-/*----------*/
-/*----------*/
-/* IMU #includes*/
-#include <rtdk.h>
-#include "Bela_BNO055.h"
-/*----------*/
-/*----------*/
+#include <TestRoutine.h>    // code for testing defined trajectory
+#include <OSC.h>            // OSC interfacing
+#include <VectorRotations.h>// bespoke calculations for vector rotations
 
 #define BUFFER_SIZE 1536    // BUFFER SIZE
 #define NUM_CHANNELS 1      // NUMBER OF CHANNELS IN AUDIO STREAMS
-#define NUM_STREAMS 10      // MAXIMUM NUMBER OF AUDIO STREAMS
-#define NUM_SPEAKERS 8      // MAXIMUM NUMBER OF VIRTUAL SPEAKERS
-#define NUM_HRTFS 7
+#define NUM_STREAMS 20      // MAXIMUM NUMBER OF AUDIO STREAMS
+#define NUM_SPEAKERS 8      // NUMBER OF VIRTUAL SPEAKERS
+#define NUM_HRTFS 7         // NUMBER OF SELECTABLE HRTF SETS
 
-extern int gSpeakers;       // Number of Speakers chosen by user
+extern int gStreams;        // Number of streams defined on startup
 extern int gTracks;         // Concurrent tracks chosen by user
-extern int gHRTF;         // HRTF chosen by user
+extern int gHRTF;           // HRTF set chosen by user
 extern bool gVoiceMeta;     // Metadata playback on/off chosen by user
-extern bool gCalibrate;   // Headset calibration
+extern bool gCalibrate;     // Headset calibration
+extern int buttonPin;       // Pin used for hardware button calibration
+extern int gVBAPDefaultAzimuth[10];   // Azimuth array
+extern int gVBAPDefaultElevation[10]; // Elevation array
 
 // instantiate the sampleStream class
 SampleStream *sampleStream[NUM_STREAMS];
-
-// instantiate binaural impulse response data buffers (left and right channels)
-ImpulseData gImpulseData[NUM_SPEAKERS*NUM_HRTFS*2];
 
 // global variables for stream playback code
 int gStopThreads = 0;
@@ -66,35 +57,14 @@ int gConvolutionSize = gFFTSize+gHRIRLength;
 int gHopSize = gFFTSize/2;
 float gFFTScaleFactor = 0;
 
-
-// BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[10]={0,72,-72,144,-144,0,72,-72,144,-144};
-
-// BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[10]={-10,-10,-10,-10,-10,20,20,20,20,20};
-
-
-//Rotation variables
-float gVBAPDefaultVector[NUM_STREAMS][3];
-float gVBAPRotatedVector[NUM_STREAMS][3];
-int gVBAPUpdatePositions[NUM_STREAMS]={0};
-int gVBAPUpdateAzimuth[NUM_STREAMS]={0};
-int gVBAPUpdateElevation[NUM_STREAMS]={0};
-int gVBAPTracking[3]={0};
-
-
 // buffers and configuration for Neon FFT processing
-ne10_fft_cpx_float32_t* impulseTimeDomainL[NUM_SPEAKERS*NUM_HRTFS];
-ne10_fft_cpx_float32_t* impulseTimeDomainR[NUM_SPEAKERS*NUM_HRTFS];
-ne10_fft_cpx_float32_t* impulseFrequencyDomainL[NUM_SPEAKERS*NUM_HRTFS];
-ne10_fft_cpx_float32_t* impulseFrequencyDomainR[NUM_SPEAKERS*NUM_HRTFS];
 ne10_fft_cpx_float32_t* signalTimeDomainIn;
 ne10_fft_cpx_float32_t* signalFrequencyDomain;  // (buffer to calculate L/R)
 ne10_fft_cpx_float32_t* signalFrequencyDomainL;
 ne10_fft_cpx_float32_t* signalFrequencyDomainR;
 ne10_fft_cpx_float32_t* signalTimeDomainOutL;
 ne10_fft_cpx_float32_t* signalTimeDomainOutR;
-ne10_fft_cfg_float32_t cfg;
+extern ne10_fft_cfg_float32_t cfg;
 
 // instantialte auxiliary task to fill buffers
 AuxiliaryTask gFillBuffersTask;
@@ -102,98 +72,19 @@ AuxiliaryTask gFillBuffersTask;
 AuxiliaryTask gFFTTask;
 
 
-// instantiate the scope
-//Scope scope;
-
 //declare process_fft_backround method
 void process_fft_background(void *);
-
-/*----------*/
-/*----------*/
-/*IMU #variables*/
-
-// Change this to change how often the BNO055 IMU is read (in Hz)
-int readInterval = 100;
-
-I2C_BNO055 bno; // IMU sensor object
-int buttonPin = 1; // calibration button pin
-int lastButtonValue = 0; // using a pulldown resistor
-
-// Quaternions and Vectors
-imu::Quaternion gCal, gCalLeft, gCalRight, gIdleConj = {1, 0, 0, 0};
-imu::Quaternion qGravIdle, qGravCal, quat, steering, qRaw;
-
-imu::Vector<3> gRaw;
-imu::Vector<3> gGravIdle, gGravCal;
-imu::Vector<3> ypr; //yaw pitch and roll angles
-
-
-int calibrationState = 0; // state machine variable for calibration
-int setForward = 0; // flag for setting forward orientation
-
-// variables handling threading
-AuxiliaryTask i2cTask;		// Auxiliary task to read I2C
-AuxiliaryTask gravityNeutralTask;		// Auxiliary task to read gravity from I2C
-AuxiliaryTask gravityDownTask;		// Auxiliary task to read gravity from I2C
-
-int readCount = 0;			// How long until we read again...
-int readIntervalSamples = 0; // How many samples between reads
-
-int printThrottle = 0; // used to limit printing frequency
-
-// function declarations
-void readIMU(void*);
-void getNeutralGravity(void*);
-void getDownGravity(void*);
-void calibrate();
-void resetOrientation();
-/*----------*/
-/*----------*/
-
-
-// function to load 8 HRIRs for 7 HRTF sets on startup
-void loadImpulse(){
-  // for each HRTF set
-  for(int i=0;i<NUM_HRTFS;i++){
-    std::string hrtf=to_string(i);
-    // load impulse .wav files from the relevant directory
-    for(int j=0;j<NUM_SPEAKERS;j++) {
-      std::string number=to_string(j+1);
-      std::string file= "./set" + hrtf + "/impulse" + number + ".wav";
-      const char * id = file.c_str();
-      //determine the HRIR lengths (in samples) and populate the buffers
-      for(int ch=0;ch<2;ch++) {
-        //allocate impulse number by hrtf, speaker and channel
-        int impulseChannel = (i*NUM_SPEAKERS*2)+(j*2)+ch;
-        gImpulseData[impulseChannel].sampleLen = getImpulseNumFrames(id);
-        gImpulseData[impulseChannel].samples = new float[getImpulseNumFrames(id)];
-        getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
-          gImpulseData[impulseChannel].sampleLen);
-        //check buffer lengths and start/end values during setup
-        rt_printf("Length %d = %d\n",impulseChannel, \
-          gImpulseData[impulseChannel].sampleLen);
-        rt_printf("Impulse %d = %f\n",impulseChannel, \
-          gImpulseData[impulseChannel].samples[0]);
-        rt_printf("Impulse %d = %f\n",impulseChannel, \
-          gImpulseData[impulseChannel].samples[gHRIRLength-1]);
-      }
-
-    }
-  }
-}
-
 
 // function to prepare maximum number of audio streams for playback
 void loadStream(){
   // load a playback .wav file into each stream buffer
-  for(int k=0;k<NUM_STREAMS;k++) {
+  for(int k=0;k<gStreams;k++) {
     std::string number=to_string(k+1);
     std::string file= "track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[k] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
   }
 }
-
 
 // funciton to prepare FFT buffers for input signals and allocate memory
 void prepFFT(){
@@ -222,154 +113,36 @@ void prepFFT(){
   memset(gOutputBufferR, 0, BUFFER_SIZE * sizeof(float));
 }
 
-
-// function to generate IR frequency domain values
-void transformHRIRs(){
-  // allocate memory and add sample values to each HRTF set HRIR FFT buffer (L and R)
-  for (int i = 0; i < NUM_SPEAKERS*NUM_HRTFS; i++){
-    int impulseL = i*2;
-    int impulseR = impulseL+1;
-    impulseTimeDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
-      * sizeof (ne10_fft_cpx_float32_t));
-    impulseTimeDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
-      * sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainL[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
-       * sizeof (ne10_fft_cpx_float32_t));
-    impulseFrequencyDomainR[i] = (ne10_fft_cpx_float32_t*) NE10_MALLOC (gConvolutionSize \
-      * sizeof (ne10_fft_cpx_float32_t));
-
-    // assign real component values from each impulse file
-    for (int n = 0; n < gHRIRLength; n++)
-    {
-      impulseTimeDomainL[i][n].r = (ne10_float32_t) gImpulseData[impulseL].samples[n];
-      impulseTimeDomainR[i][n].r = (ne10_float32_t) gImpulseData[impulseR].samples[n];
-    }
-    // transform to frequency domain (L and R)
-    ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainL[i], impulseTimeDomainL[i], \
-      cfg, 0);
-    ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainR[i], impulseTimeDomainR[i], \
-      cfg, 0);
-  }
-}
-
-
 // function to fill buffers for maximum number of streams on startup
 void fillBuffers(void*) {
-  for(int i=0;i<NUM_STREAMS;i++) {
+  for(int i=0;i<gStreams;i++) {
     if(sampleStream[i]->bufferNeedsFilled())
     sampleStream[i]->fillBuffer();
   }
 }
 
-
-// function to convert input stream point source locations to 3D vectors
-void createVectors(){
-  for(int i=0; i<NUM_STREAMS;i++){
-    // convert default azi and ele to radians
-    float aziRad=gVBAPDefaultAzimuth[i]*M_PI/180;
-    float eleRad=gVBAPDefaultElevation[i]*M_PI/180;
-    // convert co-ordinates to 3D vector values
-    gVBAPDefaultVector[i][0]=cos(eleRad)*cos(aziRad);
-    gVBAPDefaultVector[i][1]=cos(eleRad)*sin(aziRad);
-    gVBAPDefaultVector[i][2]=sin(eleRad);
-    // check default vector values on setup
-    rt_printf("\nSource %d – X: %f\t Y: %f\t Z: %f\n", i, \
-      gVBAPDefaultVector[i][0], \
-      gVBAPDefaultVector[i][1], \
-      gVBAPDefaultVector[i][2]);
- }
-}
-
-
-// function to rotate input stream point source locations using head-tracker
-// YPR input data
-void rotateVectors(){
-  //calculate yaw rotation matrix values
-  float yawRot[3]={0};
-  float yawSin = sin(ypr[0]);
-  float yawCos = cos(ypr[0]);
-  //calculate pitch rotation matrix values
-  float pitchRot[3]={0};
-  float pitchSin = sin(-ypr[1]);
-  float pitchCos = cos(-ypr[1]);
-  //calculate roll rotation matrix values
-  float rollRot[3]={0};
-  float rollSin = sin(ypr[2]);
-  float rollCos = cos(ypr[2]);
-  for(int i=0; i<NUM_STREAMS;i++){
-    //apply yaw rotation to source 3D vector locations
-    yawRot[0] = yawCos*gVBAPDefaultVector[i][0] + -yawSin*gVBAPDefaultVector[i][1];
-    yawRot[1] = yawSin*gVBAPDefaultVector[i][0] + yawCos*gVBAPDefaultVector[i][1];
-    yawRot[2] = gVBAPDefaultVector[i][2];
-    //apply pitch rotation to yaw rotated locations
-    pitchRot[0] = pitchCos*yawRot[0] + pitchSin*yawRot[2];
-    pitchRot[1] = yawRot[1];
-    pitchRot[2] = -pitchSin*yawRot[0] + pitchCos*yawRot[2];
-    //apply roll rotation to yaw and pitch rotated locations
-    rollRot[0] = pitchRot[0];
-    rollRot[1] = rollCos*pitchRot[1] + -rollSin*pitchRot[2];
-    rollRot[2] = rollSin*pitchRot[1] + rollCos*pitchRot[2];
-    //convert 3DoF rotated 3D vector locations to azi and ele values
-    gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
-    gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
-      +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
-  }
-  //check revised azi and ele value of first input on each refresh
-  //rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);
-}
-
-
 // configure Bela environment for playback
 bool setup(BelaContext *context, void *userData)
 {
-  /*----------*/
-  /*----------*/
-  /*IMU #setup routine*/
-  if(!bno.begin(2)) {
-    rt_printf("Error initialising BNO055\n");
-    return false;
-  }
-
-  rt_printf("Initialised BNO055\n");
-
-  // use external crystal for better accuracy
-    bno.setExtCrystalUse(true);
-
-  // get the system status of the sensor to make sure everything is ok
-  uint8_t sysStatus, selfTest, sysError;
-    bno.getSystemStatus(&sysStatus, &selfTest, &sysError);
-  rt_printf("System Status: %d (0 is Idle)   Self Test: %d (15 is all good)   System Error: %d (0 is no error)\n", sysStatus, selfTest, sysError);
-
-  // set sensor reading in a separate thread
-  // so it doesn't interfere with the audio processing
-  i2cTask = Bela_createAuxiliaryTask(&readIMU, 5, "bela-bno");
-  readIntervalSamples = context->audioSampleRate / readInterval;
-
-  gravityNeutralTask = Bela_createAuxiliaryTask(&getNeutralGravity, 5, "bela-neu-gravity");
-  gravityDownTask = Bela_createAuxiliaryTask(&getDownGravity, 5, "bela-down-gravity");
+  setupIMU(context->audioSampleRate);
 
   // set up button pin
   pinMode(context, 0, buttonPin, INPUT);
 
-  /*----------*/
-  /*----------*/
-
   // print user command line selections
-  rt_printf("Speakers: %d\t Tracks: %d\t Voice Metadata: %d\n", \
-    gSpeakers,gTracks,gVoiceMeta);
-  loadImpulse();    // load HRIRs
+  rt_printf("Streams: %d\t Tracks: %d\t Voice Metadata: %d\n", \
+    gStreams,gTracks,gVoiceMeta);
+  loadImpulse(gHRIRLength);    // load HRIRs
   loadStream();     // load audio streams
   prepFFT();        // set up FFT
-  transformHRIRs(); // convert HRIRs to frequency domain
+  transformHRIRs(gHRIRLength, gConvolutionSize); // convert HRIRs to frequency domain
   getVBAPMatrix();  // import VBAP speaker gain data
-  createVectors();
+  createVectors(gStreams);
   setupOSC();
-
 
   // initialise FFT auxiliary task
   if((gFFTTask = Bela_createAuxiliaryTask(&process_fft_background, 90, \
-    "fft-calculation")) == 0)
-  return false;
+    "fft-calculation")) == 0) return false;
 
   // initialise main output buffer pointers
   gOutputBufferReadPointer = 0;
@@ -385,21 +158,10 @@ bool setup(BelaContext *context, void *userData)
   	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
   }
 
-  /*// silence voice metadata streams if switched off by user input
-  if(gVoiceMeta==0){
-    for(int i=NUM_STREAMS/2;i<NUM_STREAMS;i++){
-      gStreamGains[gTracks-1][i]=0.0;
-    }
-  }*/
 
   // initialise streaming auxiliary task
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
-    "fill-buffer")) == 0)
-  return false;
-
-
-  // tell the scope how many channels and the sample rate
-  //scope.setup(2, context->audioSampleRate);
+    "fill-buffer")) == 0) return false;
 
   return true;
 }
@@ -425,7 +187,7 @@ void process_fft()
       // Add the value for each stream, taking into account VBAP speaker and
       // track gain weightings.
       if(n<gFFTSize){
-        for(int stream=0; stream<NUM_STREAMS;stream++){
+        for(int stream=0; stream<gStreams;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[stream][pointer] \
           * gStreamGains[gTracks-1][gVoiceMeta][stream] \
@@ -464,10 +226,6 @@ void process_fft()
         + (signalFrequencyDomain[n].r * \
           impulseFrequencyDomainR[speaker+(gHRTF*NUM_SPEAKERS)][n].i);
     }
-
-
-
-
   }
   // convert results back to time domain (left and right)
   ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutL, signalFrequencyDomainL, \
@@ -499,56 +257,10 @@ void render(BelaContext *context, void *userData){
 
   // process the next audio frame
   for(unsigned int n = 0; n < context->audioFrames; n++) {
-
-
-    /*----------*/
-    /*----------*/
-    /*IMU #setup routine*/
-
-    // this schedules the imu sensor readings
-    if(++readCount >= readIntervalSamples) {
-      readCount = 0;
-      Bela_scheduleAuxiliaryTask(i2cTask);
-      checkOSC();
-    }
-
-    // print IMU values, but not every sample
-    printThrottle++;
-    if(printThrottle >= 4100){
-      //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
-      //rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
-      //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
-      imu::Vector<3> qForward = gIdleConj.toEuler();
-      printThrottle = 0;
-    }
-
-    //read the value of the button
-    int buttonValue = gCalibrate;
-
-    // if button wasn't pressed before and is pressed now
-    if( buttonValue != lastButtonValue && buttonValue == 1 ){
-      // then run calibration to set looking forward (gGravIdle)
-      // and looking down (gGravCal)
-      switch(calibrationState) {
-      case 0: // first time button was pressed
-        setForward = 1;
-        // run task to get gravity values when sensor in neutral position
-        Bela_scheduleAuxiliaryTask(gravityNeutralTask);
-        calibrationState = 1;	// progress calibration state
-        break;
-      case 1: // second time button was pressed
-        // run task to get gravity values when sensor 'looking down' (for head-tracking)
-        Bela_scheduleAuxiliaryTask(gravityDownTask);
-        calibrationState = 0; // reset calibration state for next time
-        break;
-      }
-    }
-    lastButtonValue = buttonValue;
-    /*----------*/
-    /*----------*/
+    scheduleIMU();
 
 		// process and read frames for each sampleStream object into input buffer
-    for(int i=0; i<NUM_STREAMS; i++){
+    for(int i=0; i<gStreams; i++){
       sampleStream[i]->processFrame();
       gInputBuffer[i][gInputBufferPointer] = sampleStream[i]->getSample(0);
     }
@@ -564,8 +276,6 @@ void render(BelaContext *context, void *userData){
       }
 	  }
 
-    // log the oscillators to the scope
-		//scope.log(context->audioOut[0],context->audioOut[1]);
 
     /*--- SCRIPT TO ENABLE TEST MODE ---
     gVBAPUpdatePositions[0]=((gTestElevation+90)*361)+gTestAzimuth+180;
@@ -598,9 +308,9 @@ void render(BelaContext *context, void *userData){
     if(gSampleCount >= gHopSize) {
     	gFFTInputBufferPointer = gInputBufferPointer;
     	gFFTOutputBufferPointer = gOutputBufferWritePointer;
-      rotateVectors();
+      rotateVectors(gStreams);
       // calcuate the rotated position for each stream
-      for(unsigned int i=0; i < NUM_STREAMS; i++){
+      for(unsigned int i=0; i < gStreams; i++){
         gVBAPUpdatePositions[i]=((gVBAPUpdateElevation[i]+90)*361)+gVBAPUpdateAzimuth[i]+180;
       }
       Bela_scheduleAuxiliaryTask(gFFTTask);
@@ -612,99 +322,10 @@ void render(BelaContext *context, void *userData){
 }
 
 
-/*----------*/
-/*----------*/
-/* Auxiliary task to read from the I2C board*/
-void readIMU(void*)
-{
-	// get calibration status
-	uint8_t sys, gyro, accel, mag;
-	bno.getCalibration(&sys, &gyro, &accel, &mag);
-	// status of 3 means fully calibrated
-	//rt_printf("CALIBRATION STATUSES\n");
-	//rt_printf("System: %d   Gyro: %d Accel: %d  Mag: %d\n", sys, gyro, accel, mag);
-
-	// quaternion data routine from MrHeadTracker
-  	imu::Quaternion qRaw = bno.getQuat(); //get sensor raw quaternion data
-
-  	if( setForward ) {
-  		gIdleConj = qRaw.conjugate(); // sets what is looking forward
-  		setForward = 0; // reset flag so only happens once
-  	}
-
-  	steering = gIdleConj * qRaw; // calculate relative rotation data
-  	quat = gCalLeft * steering; // transform it to calibrated coordinate system
-  	quat = quat * gCalRight;
-
-  	ypr = quat.toEuler(); // transform from quaternion to Euler
-}
-
-// Auxiliary task to read from the I2C board
-void getNeutralGravity(void*) {
-	// read in gravity value
-  	imu::Vector<3> gravity = bno.getVector(I2C_BNO055::VECTOR_GRAVITY);
-  	gravity = gravity.scale(-1);
-  	gravity.normalize();
-  	gGravIdle = gravity;
-}
-
-// Auxiliary task to read from the I2C board
-void getDownGravity(void*) {
-	// read in gravity value
-  	imu::Vector<3> gravity = bno.getVector(I2C_BNO055::VECTOR_GRAVITY);
-  	gravity = gravity.scale(-1);
-  	gravity.normalize();
-  	gGravCal = gravity;
-  	// run calibration routine as we should have both gravity values
-  	calibrate();
-}
-
-// calibration of coordinate system from MrHeadTracker
-// see http://www.aes.org/e-lib/browse.cfm?elib=18567 for full paper
-// describing algorithm
-void calibrate() {
-  	imu::Vector<3> g, gravCalTemp, x, y, z;
-  	g = gGravIdle; // looking forward in neutral position
-
-  	z = g.scale(-1);
-  	z.normalize();
-
-  	gravCalTemp = gGravCal; // looking down
-  	y = gravCalTemp.cross(g);
-  	y.normalize();
-
-  	x = y.cross(z);
-  	x.normalize();
-
-  	imu::Matrix<3> rot;
-  	rot.cell(0, 0) = x.x();
-  	rot.cell(1, 0) = x.y();
-  	rot.cell(2, 0) = x.z();
-  	rot.cell(0, 1) = y.x();
-  	rot.cell(1, 1) = y.y();
-  	rot.cell(2, 1) = y.z();
-  	rot.cell(0, 2) = z.x();
-  	rot.cell(1, 2) = z.y();
-  	rot.cell(2, 2) = z.z();
-
-  	gCal.fromMatrix(rot);
-
-  	resetOrientation();
-}
-
-// from MrHeadTracker
-// resets values used for looking forward
-void resetOrientation() {
-  	gCalLeft = gCal.conjugate();
-  	gCalRight = gCal;
-}
-/*----------*/
-/*----------*/
-
 // Clear all input buffers
 void cleanup(BelaContext *context, void *userData)
 {
-  for(int i=0;i<NUM_STREAMS;i++) {
+  for(int i=0;i<gStreams;i++) {
     delete sampleStream[i];
   }
   for(int i=0;i<NUM_SPEAKERS*NUM_HRTFS;i++) {

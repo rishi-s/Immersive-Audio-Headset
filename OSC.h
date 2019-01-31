@@ -105,7 +105,7 @@ void checkOSC()
     }
 }
 
-#endif /* TESTROUTINE_H_ */
+#endif /* OSC_H_ */
 
 
 /**

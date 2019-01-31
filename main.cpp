@@ -15,7 +15,7 @@
 
 using namespace std;
 
-int gSpeakers=8;	// global variable to store VBAP speaker setup (4 or 8)
+int gStreams=10;	// global variable to store VBAP speaker setup (4 or 8)
 //int gTracks=3;		// global variable to store number of tracks played back (1 to 5)
 //bool gVoiceMeta=0;// global variable to store voice metadate state (off or on)
 
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 	settings.cleanup = cleanup;
 
 	// Parse command-line arguments
-	/*while (1) {
+	while (1) {
 		int c;
 		if ((c = Bela_getopt_long(argc, argv, "hf:", customOptions, &settings)) < 0)
 				break;
@@ -63,13 +63,13 @@ int main(int argc, char *argv[])
 				exit(0);
     case 's':
 				// read speaker argument and force to required values
-    		gSpeakers=atoi(optarg);
-				if(gSpeakers<4)
-				gSpeakers=4;
-				if(gSpeakers>4)
-				gSpeakers=8;
+    		gStreams=atoi(optarg);
+				if(gStreams<1)
+				gStreams=1;
+				if(gStreams>20)
+				gStreams=20;
     		break;
-		case 't':
+		/*case 't':
 				// read track playback argument and force to required values
 		    gTracks=atoi(optarg);
 				if(gTracks<1)
@@ -80,13 +80,13 @@ int main(int argc, char *argv[])
 		case 'm':
 				// read voice metadata argument
 				gVoiceMeta=atoi(optarg);
-				break;
+				break;*/
 		case '?':
 		default:
 				usage(basename(argv[0]));
 				exit(1);
 		}
-	}*/
+	}
 
 
 	// Initialise the PRU audio device
