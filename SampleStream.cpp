@@ -2,6 +2,7 @@
 /***** SampleStream.cpp *****/
 #include <SampleStream.h>
 
+
 // method to create new sample stream with file, number of channels, buffer size
 SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength) {
 
@@ -60,7 +61,6 @@ int SampleStream::openFile(const char* filename, int numChannels, \
         }
     }
 
-
     // reallocate memory blocks for both buffers
     gSampleBuf[0] = (SampleData*)calloc(bufferLength*numChannels,sizeof(SampleData));
     gSampleBuf[1] = (SampleData*)calloc(bufferLength*numChannels,sizeof(SampleData));
@@ -102,8 +102,9 @@ int SampleStream::openFile(const char* filename, int numChannels, \
     gBusy = 0;
 
     return 0;
-
 }
+
+
 
 void SampleStream::processFrame() {
 

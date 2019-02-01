@@ -6,10 +6,9 @@
 #ifndef TESTROUTINE_H_
 #define TESTROUTINE_H_
 
-// BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
+
 int gTestAzimuth=0;
 
-// BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
 int gTestElevation =-45;
 
 //Test varaiables
@@ -52,7 +51,7 @@ void incrementLocation(){
 }
 
 void writeOutput(float outL, float outR){
-  if(/*gAudioOut==1 &&*/ gRowCount<187){
+  if(gRowCount<187){
     gDataOutputL[gRowCount][gColumnCount] = outL;
     gDataOutputR[gRowCount][gColumnCount] = outR;
     if(++gColumnCount >=1536){
@@ -61,7 +60,6 @@ void writeOutput(float outL, float outR){
       gRowCount++;
     }
   }
-  //if(++gAudioCount>=512)gAudioOut=1;
 }
 
 #endif /* TESTROUTINE_H_ */

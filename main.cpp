@@ -16,8 +16,7 @@
 using namespace std;
 
 int gStreams=10;	// global variable to store VBAP speaker setup (4 or 8)
-//int gTracks=3;		// global variable to store number of tracks played back (1 to 5)
-//bool gVoiceMeta=0;// global variable to store voice metadate state (off or on)
+bool gHeadTracking=1;// global variable to store voice metadate state (off or on)
 
 // Handle Ctrl-C by requesting that the audio rendering stop
 void interrupt_handler(int var)
@@ -69,18 +68,10 @@ int main(int argc, char *argv[])
 				if(gStreams>20)
 				gStreams=20;
     		break;
-		/*case 't':
-				// read track playback argument and force to required values
-		    gTracks=atoi(optarg);
-				if(gTracks<1)
-				gTracks=1;
-				if(gTracks>5)
-				gTracks=5;
-		    break;
-		case 'm':
-				// read voice metadata argument
-				gVoiceMeta=atoi(optarg);
-				break;*/
+		case 't':
+				// read head tracking argument
+				gHeadTracking=atoi(optarg);
+				break;
 		case '?':
 		default:
 				usage(basename(argv[0]));

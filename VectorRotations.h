@@ -1,12 +1,10 @@
 #ifndef VECTOR_ROTATIONS_H_
 #define VECTOR_ROTATIONS_H_
 
-#include <Bela.h>
+#include <SpatialSceneParams.h> // definition of audio sources and context
 #include <imuhandler.h>
 
-#define NUM_STREAMS 20      // MAXIMUM NUMBER OF AUDIO STREAMS
-
-extern imu::Vector<3> ypr; //yaw pitch and roll angles
+//extern imu::Vector<3> ypr; //yaw pitch and roll angles
 
 // BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
 int gVBAPDefaultAzimuth[10]={0,72,-72,144,-144,0,72,-72,144,-144};
@@ -72,6 +70,9 @@ void rotateVectors(int streams){
     gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
     gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
       +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
+    // calcuate the rotated position for each stream
+    gVBAPUpdatePositions[i]=((gVBAPUpdateElevation[i]+90)*361) \
+      +gVBAPUpdateAzimuth[i]+180;
   }
   //check revised azi and ele value of first input on each refresh
   //rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);

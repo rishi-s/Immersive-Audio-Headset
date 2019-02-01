@@ -7,10 +7,17 @@
 #include <SampleData.h>
 #include <string>
 #include <Bela.h>
-
 #include <sndfile.h>	// to load audio files
 #include <iostream>
 #include <cstdlib>
+#include <SpatialSceneParams.h> // definition of audio sources and context
+
+extern int gStreams;        // Number of streams defined on startup
+
+
+
+
+
 
 using namespace std;
 
