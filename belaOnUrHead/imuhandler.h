@@ -2,8 +2,8 @@
 #define IMU_HANDLER_H_
 
 #include <Bela.h>
-#include <OSC.h>
-#include <rtdk.h>
+#include "OSC.h"
+#include "rtdk.h"
 #include "Bela_BNO055.h"
 
 extern bool gHeadTracking;       // head tracking status defined on startup

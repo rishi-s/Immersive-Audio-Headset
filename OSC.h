@@ -10,8 +10,8 @@
 #include <Bela.h>
 #include <OSCServer.h>
 #include <OSCClient.h>
-#include <SpatialSceneParams.h> // definition of audio sources and context
-#include <SampleStream.h>       // adapted code for streaming/processing audio
+#include "SpatialSceneParams.h" // definition of audio sources and context
+#include "SampleStream.h"       // adapted code for streaming/processing audio
 
 
 extern int gStreams;

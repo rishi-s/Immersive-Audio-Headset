@@ -6,8 +6,8 @@
 #ifndef VECTOR_ROTATIONS_H_
 #define VECTOR_ROTATIONS_H_
 
-#include <SpatialSceneParams.h> // definition of audio sources and context
-#include <imuhandler.h>
+#include "SpatialSceneParams.h" // definition of audio sources and context
+#include "belaOnUrHead/imuhandler.h"
 
 
 // ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)

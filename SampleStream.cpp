@@ -4,7 +4,7 @@
  ***** Code extended and adapted from Bela SampleStream example *****
  */
 
-#include <SampleStream.h> // adapted code for streaming/processing audio
+#include "SampleStream.h" // adapted code for streaming/processing audio
 
 // method to create new sample stream with file, number of channels, buffer size
 SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength) {
