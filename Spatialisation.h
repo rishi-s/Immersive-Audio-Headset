@@ -7,9 +7,9 @@
 #ifndef SPATIALISATION_H_
 #define SPATIALISATION_H_
 
-#include <SpatialSceneParams.h> // definition of audio sources and context
-#include <SampleStream.h>       // adapted code for streaming/processing audio
-#include <Trajectory.h>         // generates defined spatial trajectory
+#include "SpatialSceneParams.h" // definition of audio sources and context
+#include "SampleStream.h"       // adapted code for streaming/processing audio
+#include "Trajectory.h"         // generates defined spatial trajectory
 
 // user controlled variables from main.cpp
 extern int gStreams;

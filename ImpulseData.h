@@ -7,7 +7,7 @@
 #ifndef IMPULSEDATA_H_
 #define IMPULSEDATA_H_
 
-#include <SpatialSceneParams.h> // definition of audio sources and context
+#include "SpatialSceneParams.h" // definition of audio sources and context
 
 // User defined structure to pass between main and render complex data retrieved from file
 struct ImpulseData {

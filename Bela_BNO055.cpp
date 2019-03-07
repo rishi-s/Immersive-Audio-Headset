@@ -15,10 +15,10 @@ This software is distributed under the GNU Lesser General Public License
 (LGPL 3.0), available here: https://www.gnu.org/licenses/lgpl-3.0.txt
 
 ---------------------------------------------------------------
- ____  _____ _        _    
-| __ )| ____| |      / \   
-|  _ \|  _| | |     / _ \  
-| |_) | |___| |___ / ___ \ 
+ ____  _____ _        _
+| __ )| ____| |      / \
+|  _ \|  _| | |     / _ \
+| |_) | |___| |___ / ___ \
 |____/|_____|_____/_/   \_\
 
 The platform for ultra-low latency audio and sensor processing
@@ -38,14 +38,14 @@ The Bela software is distributed under the GNU Lesser General Public License
 */
 
 
-#include "Bela_BNO055.h"
+#include "belaOnUrHead/Bela_BNO055.h"
 
 
 /**************************************************************************
 	I2C_BNO055
     Default constructor
 **************************************************************************/
-I2C_BNO055::I2C_BNO055() 
+I2C_BNO055::I2C_BNO055()
 {
 
 }
@@ -54,15 +54,15 @@ I2C_BNO055::I2C_BNO055()
 	begin
     Handles initializing the sensor
 **************************************************************************/
-boolean I2C_BNO055::begin(uint8_t bus, uint8_t i2caddr) 
+boolean I2C_BNO055::begin(uint8_t bus, uint8_t i2caddr)
 {
   _i2c_address = i2caddr;
-	
+
 	// begin I2C communication
   	if(initI2C_RW(bus, i2caddr, 0) > 0)
   		return false;
-	
-	// check the chip ID  
+
+	// check the chip ID
   	uint8_t id = readRegister(BNO055_CHIP_ID_ADDR);
   	rt_printf("id: %d\n", id);
   	if(id != BNO055_ID)
@@ -78,7 +78,7 @@ boolean I2C_BNO055::begin(uint8_t bus, uint8_t i2caddr)
   	setMode(OPERATION_MODE_CONFIG);
   	rt_printf("switching to operation mode\n");
 
-  	// reset 
+  	// reset
   	writeRegister(BNO055_SYS_TRIGGER_ADDR, 0x20);
   	usleep(300000); // hold on for boot
   	while (readRegister(BNO055_CHIP_ID_ADDR) != BNO055_ID)// change back to while
@@ -93,7 +93,7 @@ boolean I2C_BNO055::begin(uint8_t bus, uint8_t i2caddr)
 
   	writeRegister(BNO055_PAGE_ID_ADDR, 0);
 
-  // set the output units 
+  // set the output units
   /*uint8_t unitsel = (0 << 7) | // Orientation = Android
                     (0 << 4) | // Temperature = Celsius
                     (0 << 2) | // Euler = Degrees
@@ -106,10 +106,10 @@ boolean I2C_BNO055::begin(uint8_t bus, uint8_t i2caddr)
   usleep(10);
   writeRegister(BNO055_AXIS_MAP_SIGN_ADDR, REMAP_SIGN_P2); // P0-P7, Default is P1
   usleep(10);*/
-  
+
   writeRegister(BNO055_SYS_TRIGGER_ADDR, 0x0);
   usleep(10);
-  // Set the requested operating mode (see section 3.3) 
+  // Set the requested operating mode (see section 3.3)
   setMode(OPERATION_MODE_IMUPLUS);
   usleep(20);
 
@@ -211,7 +211,7 @@ void I2C_BNO055::getSystemStatus(uint8_t *system_status, uint8_t *self_test_resu
 	getCalibration
     Returns the calibration statuses for the sensor
 **************************************************************************/
-void I2C_BNO055::getCalibration(uint8_t* sys, uint8_t* gyro, uint8_t* accel, uint8_t* mag) 
+void I2C_BNO055::getCalibration(uint8_t* sys, uint8_t* gyro, uint8_t* accel, uint8_t* mag)
 {
   uint8_t calData = readRegister(BNO055_CALIB_STAT_ADDR);
   if (sys != NULL) {
@@ -232,7 +232,7 @@ void I2C_BNO055::getCalibration(uint8_t* sys, uint8_t* gyro, uint8_t* accel, uin
 	readRegister
     Reads from requested register
 **************************************************************************/
-uint8_t I2C_BNO055::readRegister(uint8_t reg) 
+uint8_t I2C_BNO055::readRegister(uint8_t reg)
 {
     i2c_char_t inbuf, outbuf;
     struct i2c_rdwr_ioctl_data packets;
@@ -272,7 +272,7 @@ uint8_t I2C_BNO055::readRegister(uint8_t reg)
 	writeRegister
     Writes to register
 **************************************************************************/
-void I2C_BNO055::writeRegister(uint8_t reg, uint8_t value) 
+void I2C_BNO055::writeRegister(uint8_t reg, uint8_t value)
 {
 	uint8_t buf[2] = { reg, value };
 
@@ -301,8 +301,8 @@ imu::Quaternion I2C_BNO055::getQuat(void)
   uint8_t y_msb = readRegister(BNO055_QUATERNION_DATA_Y_MSB_ADDR);
   uint8_t z_lsb = readRegister(BNO055_QUATERNION_DATA_Z_LSB_ADDR);
   uint8_t z_msb = readRegister(BNO055_QUATERNION_DATA_Z_MSB_ADDR);
-  
-  
+
+
   w = (((uint16_t)w_msb) << 8) | ((uint16_t)w_lsb);
   x = (((uint16_t)x_msb) << 8) | ((uint16_t)x_lsb);
   y = (((uint16_t)y_msb) << 8) | ((uint16_t)y_lsb);
@@ -329,7 +329,7 @@ imu::Vector<3> I2C_BNO055::getVector(i2c_vector_type_t vector_type)
   x = y = z = 0;
 
   /* Read vector data (6 bytes) */
-  
+
   uint8_t x_lsb = readRegister(BNO055_GRAVITY_DATA_X_LSB_ADDR);
   uint8_t x_msb = readRegister(BNO055_GRAVITY_DATA_X_MSB_ADDR);
   uint8_t y_lsb = readRegister(BNO055_GRAVITY_DATA_Y_LSB_ADDR);
@@ -375,5 +375,3 @@ imu::Vector<3> I2C_BNO055::getVector(i2c_vector_type_t vector_type)
 
   return xyz;
 }
-
-

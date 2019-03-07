@@ -10,7 +10,7 @@
 #include <string>
 #include <iostream>
 #include <cstdlib>
-#include <ImpulseData.h>
+#include "ImpulseData.h"
 
 
 // instantiate binaural impulse response data buffers (left and right channels)

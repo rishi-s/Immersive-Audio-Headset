@@ -15,7 +15,7 @@
 
 using namespace std;
 
-int gStreams=12;					// global variable for number of streams (<=12)
+int gStreams=2;					// global variable for number of streams (<=12)
 bool gHeadTracking=1;		// global variable for headtracking (off or on)
 bool gFixedTrajectory=0;// global variable for fixed trajectory (off or on)
 bool gTestMode=0;				// global variable for rendering test mode (off or on)

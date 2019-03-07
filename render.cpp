@@ -6,16 +6,16 @@
 // include files
 #include <Bela.h>
 #include <cmath>
-#include <SpatialSceneParams.h> // definition of audio sources and context
 #include <ne10/NE10.h>			    // neon library
-#include <SampleStream.h>       // adapted code for streaming/processing audio
-#include <ImpulseLoader.h>      // code for loading HRTF IR files
-#include <ImpulseData.h>        // struct file to store IR data
-#include <VBAPData.h>           // lookup tables for VBAP speaker weightings
-#include <TestRoutine.h>        // code for testing defined trajectory
-#include <OSC.h>                // OSC interfacing
-#include <VectorRotations.h>    // bespoke code for point source vector rotation
-#include <Spatialisation.h>     // spatialisation engine
+#include "SpatialSceneParams.h" // definition of audio sources and context
+#include "SampleStream.h"       // adapted code for streaming/processing audio
+#include "ImpulseLoader.h"      // code for loading HRTF IR files
+#include "ImpulseData.h"        // struct file to store IR data
+#include "VBAPData.h"           // lookup tables for VBAP speaker weightings
+#include "TestRoutine.h"        // code for testing defined trajectory
+#include "OSC.h"                // OSC interfacing
+#include "VectorRotations.h"    // bespoke code for point source vector rotation
+#include "Spatialisation.h"     // spatialisation engine
 
 // user controlled variables from main.cpp
 extern int gStreams;
