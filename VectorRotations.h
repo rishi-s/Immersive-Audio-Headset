@@ -1,16 +1,20 @@
+/*
+ *  Created on: 30 January, 2019
+ *      Author: Rishi Shukla
+ */
+
 #ifndef VECTOR_ROTATIONS_H_
 #define VECTOR_ROTATIONS_H_
 
 #include <SpatialSceneParams.h> // definition of audio sources and context
 #include <imuhandler.h>
 
-//extern imu::Vector<3> ypr; //yaw pitch and roll angles
 
-// BECKY - ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[10]={0,72,-72,144,-144,0,72,-72,144,-144};
+// ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
+int gVBAPDefaultAzimuth[NUM_STREAMS]={0,0,-144,-72,0,72,144,-144,-72,0,72,144};
 
-// BECKY - ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[10]={-10,-10,-10,-10,-10,20,20,20,20,20};
+// ADD ELEVATIONS HERE: -90 (down) to 90 (up)
+int gVBAPDefaultElevation[NUM_STREAMS]={0,0,-10,-10,-10,-10,-10,30,30,30,30,30};
 
 //Rotation variables
 float gVBAPDefaultVector[NUM_STREAMS][3];
@@ -20,27 +24,27 @@ int gVBAPUpdateAzimuth[NUM_STREAMS]={0};
 int gVBAPUpdateElevation[NUM_STREAMS]={0};
 int gVBAPTracking[3]={0};
 
+//Constants
+float kDegToRad=M_PI/180;
+float kRadToDeg=180/M_PI;
+
 // function to convert input stream point source locations to 3D vectors
 void createVectors(int streams){
   for(int i=0; i<streams;i++){
     // convert default azi and ele to radians
-    float aziRad=gVBAPDefaultAzimuth[i]*M_PI/180;
-    float eleRad=gVBAPDefaultElevation[i]*M_PI/180;
+    float aziRad=gVBAPDefaultAzimuth[i]*kDegToRad;
+    float eleRad=gVBAPDefaultElevation[i]*kDegToRad;
     // convert co-ordinates to 3D vector values
     gVBAPDefaultVector[i][0]=cos(eleRad)*cos(aziRad);
     gVBAPDefaultVector[i][1]=cos(eleRad)*sin(aziRad);
     gVBAPDefaultVector[i][2]=sin(eleRad);
-    // check default vector values on setup
-    rt_printf("\nSource %d – X: %f\t Y: %f\t Z: %f\n", i, \
-      gVBAPDefaultVector[i][0], \
-      gVBAPDefaultVector[i][1], \
-      gVBAPDefaultVector[i][2]);
  }
 }
 
 // function to rotate input stream point source locations using head-tracker
 // YPR input data
 void rotateVectors(int streams){
+  createVectors(streams);
   //calculate yaw rotation matrix values
   float yawRot[3]={0};
   float yawSin = sin(ypr[0]);
@@ -67,15 +71,13 @@ void rotateVectors(int streams){
     rollRot[1] = rollCos*pitchRot[1] + -rollSin*pitchRot[2];
     rollRot[2] = rollSin*pitchRot[1] + rollCos*pitchRot[2];
     //convert 3DoF rotated 3D vector locations to azi and ele values
-    gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*180/M_PI);
+    gVBAPUpdateAzimuth[i]=(int)roundf(atan2(rollRot[1],rollRot[0])*kRadToDeg);
     gVBAPUpdateElevation[i]=(int)roundf(asin(rollRot[2]/(sqrt(pow(rollRot[0],2) \
-      +pow(rollRot[1],2)+pow(rollRot[2],2))))*180/M_PI);
+      +pow(rollRot[1],2)+pow(rollRot[2],2))))*kRadToDeg);
     // calcuate the rotated position for each stream
     gVBAPUpdatePositions[i]=((gVBAPUpdateElevation[i]+90)*361) \
       +gVBAPUpdateAzimuth[i]+180;
   }
-  //check revised azi and ele value of first input on each refresh
-  //rt_printf("Azimuth %d - Elevation %d\n",gVBAPUpdateAzimuth[0],gVBAPUpdateElevation[0]);
 }
 
 #endif /*VECTOR_ROTATIONS_H_*/

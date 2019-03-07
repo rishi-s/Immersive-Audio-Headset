@@ -1,5 +1,8 @@
-/***** Code taken from Bela SampleLoader example *****/
-/***** SampleLoader.h *****/
+/*
+ *  Created on: 21 April, 2018
+ *      Author: Rishi Shukla
+ ***** Code extended and adapted from Bela SampleLoader example *****
+ */
 
 //include files
 #include <Bela.h>
@@ -167,4 +170,14 @@ void transformHRIRs(int impulseLength, int convSize){
     ne10_fft_c2c_1d_float32_neon(impulseFrequencyDomainR[i], impulseTimeDomainR[i], \
       cfg, 0);
   }
+}
+
+// function to clear impulses from memory
+void clearImpulseFFTBuffers(){
+	for(int i=0;i<NUM_SPEAKERS*NUM_HRTFS;i++) {
+		NE10_FREE(impulseTimeDomainL[i]);
+		NE10_FREE(impulseTimeDomainR[i]);
+		NE10_FREE(impulseFrequencyDomainL[i]);
+		NE10_FREE(impulseFrequencyDomainR[i]);
+	}
 }

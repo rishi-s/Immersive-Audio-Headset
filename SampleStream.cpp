@@ -1,7 +1,10 @@
-/***** Code taken from Bela SampleStream example *****/
-/***** SampleStream.cpp *****/
-#include <SampleStream.h>
+/*
+ *  Created on: 21 April, 2018
+ *      Author: Rishi Shukla
+ ***** Code extended and adapted from Bela SampleStream example *****
+ */
 
+#include <SampleStream.h> // adapted code for streaming/processing audio
 
 // method to create new sample stream with file, number of channels, buffer size
 SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength) {
@@ -123,6 +126,11 @@ void SampleStream::processFrame() {
             gReadPtr = 0;
             gActiveBuffer = !gActiveBuffer;
             gBufferToBeFilled = 1;
+            //ADDITION: if end of file, continue playback and reset file end status
+            if(gFileEnd) {
+              gPlaying=1;
+              gFileEnd=0;
+            }
         }
     }
 
@@ -157,6 +165,8 @@ void SampleStream::fillBuffer() {
         if((gBufferReadPtr+gBufferLength)>=gNumFramesInFile-1) {
               endFrame = gNumFramesInFile-1;
               zeroPad = 1;
+              // ADDITION: flag the end of the file
+              gFileEnd=1;
         }
 
         for(int ch=0;ch<gNumChannels;ch++) {

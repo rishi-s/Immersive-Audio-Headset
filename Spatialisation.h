@@ -1,12 +1,19 @@
-#ifndef FFT_H_
-#define FFT_H_
+/*
+ *  Created on: 31 January, 2019
+ *      Author: Rishi Shukla
+ *****  Code extended and adapted from QMUL ECS732P module content *****
+ */
+
+#ifndef SPATIALISATION_H_
+#define SPATIALISATION_H_
 
 #include <SpatialSceneParams.h> // definition of audio sources and context
-#include <SampleStream.h>
+#include <SampleStream.h>       // adapted code for streaming/processing audio
+#include <Trajectory.h>         // generates defined spatial trajectory
 
-extern int gStreams;        // Number of streams defined on startup
-extern int gHeadTracking;
-//extern SampleStream *sampleStream[NUM_STREAMS];
+// user controlled variables from main.cpp
+extern int gStreams;
+extern bool gHeadTracking;
 
 // FFT overlap/add buffers and variables
 float gInputBuffer[NUM_STREAMS][BUFFER_SIZE];
@@ -33,7 +40,6 @@ ne10_fft_cpx_float32_t* signalFrequencyDomainR;
 ne10_fft_cpx_float32_t* signalTimeDomainOutL;
 ne10_fft_cpx_float32_t* signalTimeDomainOutR;
 extern ne10_fft_cfg_float32_t cfg;
-
 
 // instatiate auxiliary task to calculate FFTs
 AuxiliaryTask gFFTTask;
@@ -110,7 +116,7 @@ void process_fft()
       if(n<gFFTSize){
         for(int stream=0; stream<gStreams;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
-          gInputBuffer[stream][pointer] * 0.5f \
+          gInputBuffer[stream][pointer] \
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Update "pointer" each time and wrap it around to keep it within the
@@ -171,13 +177,6 @@ void process_fft_background(void *) {
 
 void spatialiseAudio(){
 
-  // script to run routine for unit impulse output test with fixed trajectory
-  if(!gHeadTracking){
-    gVBAPUpdatePositions[0]=((gTestElevation+90)*361)+gTestAzimuth+180;
-    writeOutput(gOutputBufferL[gOutputBufferReadPointer], \
-      gOutputBufferR[gOutputBufferReadPointer]);
-  }
-
   // clear the output samples in the buffers so they're ready for the next ola
   gOutputBufferL[gOutputBufferReadPointer] = 0;
   gOutputBufferR[gOutputBufferReadPointer] = 0;
@@ -203,14 +202,34 @@ void spatialiseAudio(){
   if(gSampleCount >= gHopSize) {
     gFFTInputBufferPointer = gInputBufferPointer;
     gFFTOutputBufferPointer = gOutputBufferWritePointer;
-    rotateVectors(gStreams);
-    // calcuate the rotated position for each stream
-    //for(unsigned int i=0; i < gStreams; i++){
-
-    //}
+    checkOSC();
+    // If head tracking is switched on:
+    // check the IMU position
+    // calculate and apply rotations to sources and lookup revised position ...
+    if(gHeadTracking){
+      scheduleIMU();
+      rotateVectors(gStreams);
+    }
+    // .. otherwise use the default locations and lookup that position.
+    else {
+      for (int i = 0; i < gStreams; i++){
+        gVBAPUpdatePositions[i]=((gVBAPDefaultElevation[i]+90)*361) \
+          +gVBAPDefaultAzimuth[i]+180;
+      }
+    }
     Bela_scheduleAuxiliaryTask(gFFTTask);
     gSampleCount = 0;
   }
 }
 
-#endif /* FFT_H_ */
+void clearSignalFFTBuffers(){
+  NE10_FREE(signalTimeDomainIn);
+  NE10_FREE(signalFrequencyDomain);
+  NE10_FREE(signalFrequencyDomainL);
+  NE10_FREE(signalFrequencyDomainR);
+  NE10_FREE(signalTimeDomainOutL);
+  NE10_FREE(signalTimeDomainOutR);
+  NE10_FREE(cfg);
+}
+
+#endif /* SPATIALISATION_H_ */

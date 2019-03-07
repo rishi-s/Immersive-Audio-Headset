@@ -2,19 +2,11 @@
 #define IMU_HANDLER_H_
 
 #include <Bela.h>
-
-
-/*----------*/
-/*----------*/
-/* IMU #includes*/
+#include <OSC.h>
 #include <rtdk.h>
 #include "Bela_BNO055.h"
-/*----------*/
-/*----------*/
 
-/*----------*/
-/*----------*/
-/*IMU #variables*/
+extern bool gHeadTracking;       // head tracking status defined on startup
 
 // Change this to change how often the BNO055 IMU is read (in Hz)
 int readInterval = 100;
@@ -30,7 +22,6 @@ imu::Quaternion qGravIdle, qGravCal, quat, steering, qRaw;
 imu::Vector<3> gRaw;
 imu::Vector<3> gGravIdle, gGravCal;
 imu::Vector<3> ypr; //yaw pitch and roll angles
-
 
 int calibrationState = 0; // state machine variable for calibration
 int setForward = 0; // flag for setting forward orientation
@@ -51,12 +42,8 @@ void getNeutralGravity(void*);
 void getDownGravity(void*);
 void calibrate();
 void resetOrientation();
-/*----------*/
-/*----------*/
 
 
-/*----------*/
-/*----------*/
 /*IMU #setup routine*/
 bool setupIMU(int sampleRate) {
   {
@@ -83,33 +70,18 @@ bool setupIMU(int sampleRate) {
     gravityNeutralTask = Bela_createAuxiliaryTask(&getNeutralGravity, 5, "bela-neu-gravity");
     gravityDownTask = Bela_createAuxiliaryTask(&getDownGravity, 5, "bela-down-gravity");
 
-
   }
   return true;
 }
 
-/*----------*/
-/*----------*/
-
-/*----------*/
-/*----------*/
-/*IMU scheduler*/
 
 bool scheduleIMU(){
   {
-    // this schedules the imu sensor readings
-    if(++readCount >= readIntervalSamples) {
-      readCount = 0;
-      Bela_scheduleAuxiliaryTask(i2cTask);
-      checkOSC();
-    }
+    Bela_scheduleAuxiliaryTask(i2cTask);
 
     // print IMU values, but not every sample
     printThrottle++;
     if(printThrottle >= 4100){
-      //rt_printf("Tracker Value: %d %d %d \n",gVBAPTracking[0],gVBAPTracking[1],gVBAPTracking[2]); //print horizontal head-track value
-      //rt_printf("%f %f %f\n", ypr[0], ypr[1], ypr[2]);
-      //rt_printf("Positions Update: %d %d\n",gVBAPUpdatePositions[0],gVBAPUpdatePositions[9]); //print horizontal head-track value
       imu::Vector<3> qForward = gIdleConj.toEuler();
       printThrottle = 0;
     }
@@ -139,12 +111,8 @@ bool scheduleIMU(){
   }
 return true;
 }
-/*----------*/
-/*----------*/
 
 
-/*----------*/
-/*----------*/
 /* Auxiliary task to read from the I2C board*/
 void readIMU(void*)
 {
@@ -170,6 +138,7 @@ void readIMU(void*)
   	ypr = quat.toEuler(); // transform from quaternion to Euler
 }
 
+
 // Auxiliary task to read from the I2C board
 void getNeutralGravity(void*) {
 	// read in gravity value
@@ -178,6 +147,7 @@ void getNeutralGravity(void*) {
   	gravity.normalize();
   	gGravIdle = gravity;
 }
+
 
 // Auxiliary task to read from the I2C board
 void getDownGravity(void*) {
@@ -189,6 +159,7 @@ void getDownGravity(void*) {
   	// run calibration routine as we should have both gravity values
   	calibrate();
 }
+
 
 // calibration of coordinate system from MrHeadTracker
 // see http://www.aes.org/e-lib/browse.cfm?elib=18567 for full paper
@@ -223,13 +194,12 @@ void calibrate() {
   	resetOrientation();
 }
 
+
 // from MrHeadTracker
 // resets values used for looking forward
 void resetOrientation() {
   	gCalLeft = gCal.conjugate();
   	gCalRight = gCal;
 }
-/*----------*/
-/*----------*/
 
 #endif /* IMU_HANDLER_H_ */

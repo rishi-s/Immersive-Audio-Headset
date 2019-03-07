@@ -1,7 +1,7 @@
 /*
  *  Created on: 21 April, 2018
  *      Author: Rishi Shukla
- *****  Code extended and adapted from RTDSP module Assignment 1  *****
+ *****  Code extended and adapted from QMUL ECS732P module content *****
  */
 
 // include files
@@ -15,14 +15,18 @@
 
 using namespace std;
 
-int gStreams=10;	// global variable to store VBAP speaker setup (4 or 8)
-bool gHeadTracking=1;// global variable to store voice metadate state (off or on)
+int gStreams=12;					// global variable for number of streams (<=12)
+bool gHeadTracking=1;		// global variable for headtracking (off or on)
+bool gFixedTrajectory=0;// global variable for fixed trajectory (off or on)
+bool gTestMode=0;				// global variable for rendering test mode (off or on)
+
 
 // Handle Ctrl-C by requesting that the audio rendering stop
 void interrupt_handler(int var)
 {
 	gShouldStop = true;
 }
+
 
 // Print usage information
 void usage(const char * processName)
@@ -32,16 +36,20 @@ void usage(const char * processName)
 	cerr << "   --help [-h]:                Print this menu\n";
 }
 
+
 int main(int argc, char *argv[])
 {
+
 	BelaInitSettings settings;		// standard audio settings
 	int format;
+
 	struct option customOptions[] =
 	{
-		{"help", 0, NULL, 'h'},
-		{"speakers", 1, NULL, 's'},	// argument for speaker number
-		{"tracks", 1, NULL, 't'},		// argument for track count
-		{"voice", 1, NULL, 'm'},		// argument for voice metadata
+		{"help", 0, NULL, 'h'},				// help options call
+		{"sources", 1, NULL, 's'},		// sound sources call
+		{"tracking", 1, NULL, 't'},		// head tracking call
+		{"trajectory", 1, NULL, 'f'},	// head tracking call
+		{"test", 1, NULL, 'x'},				// test mode call
 		{NULL, 0, NULL, 0}
 	};
 
@@ -61,16 +69,24 @@ int main(int argc, char *argv[])
 				usage(basename(argv[0]));
 				exit(0);
     case 's':
-				// read speaker argument and force to required values
+				// read streams argument and force within required values
     		gStreams=atoi(optarg);
 				if(gStreams<1)
 				gStreams=1;
-				if(gStreams>20)
-				gStreams=20;
+				if(gStreams>12)
+				gStreams=12;
     		break;
 		case 't':
 				// read head tracking argument
 				gHeadTracking=atoi(optarg);
+				break;
+		case 'f':
+				// read test mode argument
+				gFixedTrajectory=atoi(optarg);
+				break;
+		case 'x':
+				// read test mode argument
+				gTestMode=atoi(optarg);
 				break;
 		case '?':
 		default:
@@ -79,13 +95,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
-
 	// Initialise the PRU audio device
 	if(Bela_initAudio(&settings, &format) != 0) {
 		cout << "Error: unable to initialise audio" << endl;
 		return -1;
 	}
-
 
 	// Start the audio device running
 	if(Bela_startAudio()) {
@@ -93,25 +107,20 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-
 	// Set up interrupt handler to catch Control-C
 	signal(SIGINT, interrupt_handler);
 	signal(SIGTERM, interrupt_handler);
-
 
 	// Run until told to stop
 	while(!gShouldStop) {
 		usleep(100000);
 	}
 
-
 	// Stop the audio device
 	Bela_stopAudio();
 
-
 	// Clean up any resources allocated for audio
 	Bela_cleanupAudio();
-
 
 	// All done!
 	return 0;

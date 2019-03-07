@@ -1,7 +1,7 @@
 /*
  *  Created on: 21 April, 2018
  *      Author: Rishi Shukla
- ****** Code adapted from Bela SampleLoader example  *****
+ *****  Code extended and adapted from QMUL ECS732P module content *****
  */
 
 #ifndef IMPULSEDATA_H_

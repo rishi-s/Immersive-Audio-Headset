@@ -1,22 +1,21 @@
-/***** Code taken from Bela SampleLoader example *****/
-/***** SampleStream.h *****/
+/*
+ *  Created on: 21 April, 2018
+ *      Author: Rishi Shukla
+ ***** Code extended and adapted from Bela SampleStream example *****
+ */
 
 #ifndef SAMPLESTREAM_H_
 #define SAMPLESTREAM_H_
 
-#include <SampleData.h>
+#include <SampleData.h>          // to store SampleStream data
 #include <string>
 #include <Bela.h>
-#include <sndfile.h>	// to load audio files
+#include <sndfile.h>             // to load audio files
 #include <iostream>
 #include <cstdlib>
-#include <SpatialSceneParams.h> // definition of audio sources and context
+#include <SpatialSceneParams.h>  // definition of audio sources and context
 
-extern int gStreams;        // Number of streams defined on startup
-
-
-
-
+extern int gStreams;             // Number of streams defined on startup
 
 
 using namespace std;
@@ -69,6 +68,9 @@ private:
     float gFadeAmount;
     float gFadeLengthInSeconds;
     int gFadeDirection;
+
+    //ADDITION: variable to track reaching end of file
+    bool gFileEnd;
 
     int gBusy;
 
