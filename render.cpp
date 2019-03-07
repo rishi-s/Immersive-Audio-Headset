@@ -98,7 +98,7 @@ void loadAudioFiles(){
   // load a playback .wav file into each stream buffer
   for(int stream=0;stream<gStreams;stream++) {
     std::string number=to_string(stream+1);
-    std::string file= "track" + number + ".wav";
+    std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
     gInputVolume[stream]=0.4;
