@@ -6,6 +6,7 @@
 #ifndef TRAJECTORY_H_
 #define TRAJECTORY_H_
 
+
 // variables referenced from main render.cpp
 extern int gVBAPDefaultAzimuth[NUM_STREAMS];
 extern int gVBAPDefaultElevation[NUM_STREAMS];

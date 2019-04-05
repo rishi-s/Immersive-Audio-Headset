@@ -4,6 +4,12 @@
  ***** Code extended and adapted from Bela SampleStream example *****
  */
 
+extern bool gPlayingA;
+extern bool gPlayingB;
+bool gHeardAState=false;
+bool gHeardBState=false;
+
+
 #include "SampleStream.h" // adapted code for streaming/processing audio
 
 // method to create new sample stream with file, number of channels, buffer size
@@ -126,9 +132,15 @@ void SampleStream::processFrame() {
             gReadPtr = 0;
             gActiveBuffer = !gActiveBuffer;
             gBufferToBeFilled = 1;
-            //ADDITION: if end of file, continue playback and reset file end status
+            //ADDITION: if end of file, stop playback and reset file end status
             if(gFileEnd) {
-              gPlaying=1;
+              stopPlaying();
+              // stop all playback and update flags if using fixed trajectory
+              if(gFixedTrajectory) {
+                gCurrentState=kStopped;
+                if(gPlayingA)gHeardAState=true;
+                else if(gPlayingB)gHeardBState=true;
+              }
               gFileEnd=0;
             }
         }
@@ -197,6 +209,11 @@ int SampleStream::bufferNeedsFilled() {
     return gBufferToBeFilled;
 }
 
+// ADDITION: function to request buffer fill
+void SampleStream::flagFillBuffer() {
+  gBufferToBeFilled=1;
+}
+
 void SampleStream::togglePlayback() {
     gPlaying = !gPlaying;
     gFadeAmount = gPlaying;
@@ -228,6 +245,22 @@ void SampleStream::togglePlaybackWithFade(float fadeLengthInSeconds) {
     if(gFadeDirection)
         gPlaying = 1;
 }
+
+
+// ADDITION: function to stop stream
+void SampleStream::stopPlaying() {
+  // reset variables
+  gPlaying = 0;
+  gBufferToBeFilled = 0;
+  gActiveBuffer = 1;
+  gBufferReadPtr = 0;
+  gReadPtr = BUFFER_SIZE;
+}
+
+void SampleStream::setActiveBuffer(bool activeBuffer){
+  gActiveBuffer=activeBuffer;
+};
+
 
 //function to check if stream is playing
 int SampleStream::isPlaying() {
