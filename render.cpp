@@ -22,6 +22,8 @@ extern int gStreams;
 extern bool gFixedTrajectory;
 extern bool gTestMode;
 
+int gCurrentState=kStopped;
+
 // volume level variables for individual streams
 float gInputVolume[NUM_STREAMS]={};
 
@@ -33,6 +35,7 @@ AuxiliaryTask gFillBuffersTask;
 
 // helper functions for this code
 void loadAudioFiles();
+void reinitialiseAudioStreams();
 void fillBuffers(void*);
 void applyTestCoords();
 
@@ -40,6 +43,7 @@ void applyTestCoords();
 // configure Bela environment for playback
 bool setup(BelaContext *context, void *userData)
 {
+  system("ifdown wlan0; ifup wlan0;");
   setupIMU(context->audioSampleRate);
   // set up button pin for calibration, if used
   pinMode(context, 0, buttonPin, INPUT);
@@ -49,6 +53,7 @@ bool setup(BelaContext *context, void *userData)
   transformHRIRs(gHRIRLength, gConvolutionSize); // convert HRIRs to Hz domain
   getVBAPMatrix();                               // import VBAP speaker gains
   setupOSC();                                    // setup OSC communication
+  if(gFixedTrajectory) createPairs();            // create HRTF tournament
   initFFTProcesses();                            // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;          // fill buffers
@@ -57,38 +62,65 @@ bool setup(BelaContext *context, void *userData)
 
 // render the audio scene
 void render(BelaContext *context, void *userData){
-
   // check if buffers need filling using low priority auxiliary task
   Bela_scheduleAuxiliaryTask(gFillBuffersTask);
 
   // process the next audio frame
   for(unsigned int n = 0; n < context->audioFrames; n++) {
 
-    //use a defined 10 second trajectory for HRTF selection purposes
-    if(gFixedTrajectory && !gTestMode)updatePositions();
+    // push/pop OSC messages
+    checkOSC();
 
-    //use a defined test routine for verifying HRTF convolution outputs
-    if(gTestMode)applyTestCoords();
-
-    // process and read frames for each sampleStream object into input buffer
-    for(int stream=0; stream<gStreams; stream++){
-      sampleStream[stream]->processFrame();
-      gInputBuffer[stream][gInputBufferPointer] = sampleStream[stream]->getSample(0) \
-        * gInputVolume[stream];
+    // if playback is paused:
+    if(gCurrentState==kPaused){
+      // kill the output
+      context->audioOut[n * context->audioOutChannels + 0] = 0.0;
+      context->audioOut[n * context->audioOutChannels + 1] = 0.0;
     }
 
-    // copy output buffer L/R to audio output L/R
-    for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
-      if(channel == 0) {
-        context->audioOut[n * context->audioOutChannels + channel] = \
-          gOutputBufferL[gOutputBufferReadPointer];
+    //if playback has just been stopped:
+    else if(gCurrentState==kStopped){
+      // kill the output
+      context->audioOut[n * context->audioOutChannels + 0] = 0.0;
+      context->audioOut[n * context->audioOutChannels + 1] = 0.0;
+
+      reinitialiseAudioStreams();
+
+      // pause playback
+      gCurrentState=kPaused;
+    }
+
+    // if playback is active, proccess the audio
+    else if(gCurrentState==kPlaying){
+
+      //use a defined 10 second trajectory for HRTF selection purposes
+      if(gFixedTrajectory && !gTestMode)updatePositions();
+
+      //use a defined test routine for verifying HRTF convolution outputs
+      if(gTestMode)applyTestCoords();
+
+      // run the spatialisation algorithm
+      spatialiseAudio();
+
+      // process and read frames for each sampleStream object into input buffer
+      for(int stream=0; stream<gStreams; stream++){
+        sampleStream[stream]->togglePlayback(1);
+        sampleStream[stream]->processFrame();
+        gInputBuffer[stream][gInputBufferPointer] = sampleStream[stream]->getSample(0) \
+          * gInputVolume[stream];
       }
-      else if (channel == 1){
-        context->audioOut[n * context->audioOutChannels + channel] = \
-          gOutputBufferR[gOutputBufferReadPointer];
+      // copy output buffer L/R to audio output L/R
+      for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
+        if(channel == 0) {
+          context->audioOut[n * context->audioOutChannels + channel] = \
+            gOutputBufferL[gOutputBufferReadPointer];
+        }
+        else if (channel == 1){
+          context->audioOut[n * context->audioOutChannels + channel] = \
+            gOutputBufferR[gOutputBufferReadPointer];
+        }
       }
     }
-    spatialiseAudio();
   }
 }
 
@@ -105,6 +137,34 @@ void loadAudioFiles(){
   }
 }
 
+
+void reinitialiseAudioStreams(){
+  // stop all streams and set to refill input buffers
+  for(int stream=0; stream<gStreams; stream++){
+    sampleStream[stream]->stopPlaying();
+  }
+  Bela_scheduleAuxiliaryTask(gFillBuffersTask);
+  // reset pointers and counters
+  gOutputBufferReadPointer = 0;
+  gOutputBufferWritePointer = gHopSize;
+  gInputBufferPointer = 0;
+  gFFTInputBufferPointer=0;
+  gFFTOutputBufferPointer=0;
+  gSampleCount=0;
+  // clear output buffers
+  for(int i=0; i<BUFFER_SIZE; i++){
+    gOutputBufferL[i]=0;
+    gOutputBufferR[i]=0;
+  }
+  // freeze the trajectory if in that mode
+  if(gFixedTrajectory){
+    gTrajectoryCount=0;
+    gOrbitCount=0;
+    gVBAPDefaultAzimuth[0]=0;
+    gVBAPDefaultElevation[0]=0;
+    gPlaybackText=" ";
+  }
+}
 
 // function to fill buffers for specified number of streams on startup
 void fillBuffers(void*) {

@@ -11,6 +11,7 @@
 #include "SampleStream.h"       // adapted code for streaming/processing audio
 #include "Trajectory.h"         // generates defined spatial trajectory
 
+
 // user controlled variables from main.cpp
 extern int gStreams;
 extern bool gHeadTracking;
@@ -202,7 +203,6 @@ void spatialiseAudio(){
   if(gSampleCount >= gHopSize) {
     gFFTInputBufferPointer = gInputBufferPointer;
     gFFTOutputBufferPointer = gOutputBufferWritePointer;
-    checkOSC();
     // If head tracking is switched on:
     // check the IMU position
     // calculate and apply rotations to sources and lookup revised position ...

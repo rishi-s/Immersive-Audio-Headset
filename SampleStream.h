@@ -15,10 +15,19 @@
 #include <cstdlib>
 #include "SpatialSceneParams.h"  // definition of audio sources and context
 
-extern int gStreams;             // Number of streams defined on startup
 
+extern int gStreams;
+extern int gCurrentState;
+extern bool gFixedTrajectory;
 
 using namespace std;
+
+
+
+// state machine for playback
+enum States {kPlaying, kPaused, kStopped};
+
+
 
 class SampleStream
 {
@@ -37,6 +46,10 @@ public:
     void togglePlayback(int toggle);
     void togglePlaybackWithFade(int toggle, float fadeLengthInSeconds);
     int isPlaying();
+    //ADDITIONS:
+    void stopPlaying();
+    void flagFillBuffer();
+    void setActiveBuffer(bool activeBuffer);
 
 private:
 
