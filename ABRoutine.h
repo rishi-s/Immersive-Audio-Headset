@@ -21,7 +21,6 @@ std::string gSubmitText=" ";
 std::string gCalibrateText="Look ahead";
 std::string gLocationText="Example 1";
 
-
 int gChoiceState=kNoneSelected;
 int gCalibrateState=kAhead;
 bool gPlayingA=false;
@@ -45,7 +44,7 @@ int HRTFComboIdx [21]= {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 int HRTFComboOrd [2] = {0,1};
 
 // index for tournament progress
-int gComparIndex = 21;
+int gComparIndex = 0;
 
 // 2D array to store randomised HRTF tournament, generated on setup
 int gComparMatches [22][2] = {{1,2}};
@@ -75,7 +74,10 @@ int gLocationTrials [42][2] = {{120,0},{80,45}};
 
 // variables to store localisation outcomes
 int gLocalisationResponses[42][2]={};
+int gLocalisationHRTFState[42]={};
+int gLocalisationHRTF[42]={};
 float gLocalisationResponseTimes[42]={};
+
 
 
 // Random pair generator funciton
@@ -219,13 +221,16 @@ void writeLocationResponses(){
   std::replace(timeStamp.begin(), timeStamp.end(), '\n', '_');
   std::ofstream LocAns("/root/Bela/projects/VBAP_STUDY_LOGS/Loc_Responses_"+ \
     timeStamp+".csv");
-  LocAns << "Trial,Target Azi,Target Ele, Response Azi,Response Ele,Time" << '\n';
+  LocAns << "Trial,Target Azi,Target Ele, Response Azi,Response Ele, \
+    HRTFState, HRTFNum, Time" << '\n';
   for (int i = 0; i < 42; i++) {
-    LocAns << i << ',';
+    LocAns << i-1 << ',';
     LocAns << gLocationTrials[i][0]<<',';
     LocAns << gLocationTrials[i][1]<<',';
     LocAns << gLocalisationResponses[i][0]<<',';
     LocAns << gLocalisationResponses[i][1]<<',';
+    LocAns << gLocalisationHRTFState[i]<<',';
+    LocAns << gLocalisationHRTF[i]<<',';
     LocAns << gLocalisationResponseTimes[i]<<','<<'\n';
   }
 }
