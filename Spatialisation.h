@@ -15,6 +15,7 @@
 // user controlled variables from main.cpp
 extern int gStreams;
 extern bool gHeadTracking;
+extern bool gHeadLocked;
 
 // FFT overlap/add buffers and variables
 float gInputBuffer[NUM_STREAMS][BUFFER_SIZE];
@@ -206,7 +207,7 @@ void spatialiseAudio(){
     // If head tracking is switched on:
     // check the IMU position
     // calculate and apply rotations to sources and lookup revised position ...
-    if(gHeadTracking){
+    if(gHeadTracking && !gHeadLocked){
       scheduleIMU();
       rotateVectors(gStreams);
     }

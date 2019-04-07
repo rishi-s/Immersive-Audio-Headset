@@ -23,6 +23,7 @@ extern bool gFixedTrajectory;
 extern bool gTestMode;
 
 int gCurrentState=kStopped;
+bool gHeadLocked=1;
 
 // volume level variables for individual streams
 float gInputVolume[NUM_STREAMS]={};
@@ -53,7 +54,11 @@ bool setup(BelaContext *context, void *userData)
   transformHRIRs(gHRIRLength, gConvolutionSize); // convert HRIRs to Hz domain
   getVBAPMatrix();                               // import VBAP speaker gains
   setupOSC();                                    // setup OSC communication
-  if(gFixedTrajectory) createPairs();            // create HRTF tournament
+  if(gFixedTrajectory){
+    createPairs();                               // create HRTF tournament
+    createLocations();
+    gInputVolume[1]=0.0;                         // mute second stream
+  }
   initFFTProcesses();                            // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;          // fill buffers
@@ -133,7 +138,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.4;
+    gInputVolume[stream]=0.5;
   }
 }
 

@@ -8,6 +8,7 @@ extern bool gPlayingA;
 extern bool gPlayingB;
 bool gHeardAState=false;
 bool gHeardBState=false;
+bool gLooping=false;
 
 
 #include "SampleStream.h" // adapted code for streaming/processing audio
@@ -132,14 +133,16 @@ void SampleStream::processFrame() {
             gReadPtr = 0;
             gActiveBuffer = !gActiveBuffer;
             gBufferToBeFilled = 1;
-            //ADDITION: if end of file, stop playback and reset file end status
+            //ADDITION: if end of file, stop when not looping and reset file end
             if(gFileEnd) {
-              stopPlaying();
-              // stop all playback and update flags if using fixed trajectory
-              if(gFixedTrajectory) {
-                gCurrentState=kStopped;
-                if(gPlayingA)gHeardAState=true;
-                else if(gPlayingB)gHeardBState=true;
+              if(!gLooping){
+                stopPlaying();
+                // stop all playback and update flags if using fixed trajectory
+                if(gFixedTrajectory) {
+                  gCurrentState=kStopped;
+                  if(gPlayingA)gHeardAState=true;
+                  else if(gPlayingB)gHeardBState=true;
+                }
               }
               gFileEnd=0;
             }
