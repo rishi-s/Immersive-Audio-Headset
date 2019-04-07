@@ -15,6 +15,7 @@ extern int gHopSize;
 // trajectory variables
 int gTrajectoryCount=0;
 int gTrajectoryLength=441000;
+int gPauseLength=19294;
 int gRotationLength=110250;
 int gStopLength=66150;
 int gTrajectoryStages[6]={gRotationLength,
@@ -25,16 +26,16 @@ int gTrajectoryStages[6]={gRotationLength,
                           gRotationLength+(5*gStopLength)
                           };
 int gOrbitCount=0;
-int gOrbitLength=93712;
+int gOrbitLength=77175;
 
 // function to generate trajectory fixed and repeating trajectory
 void updatePositions(){
   //Update trajectory count
   gTrajectoryCount++;
   //orbit trajectory
-  if (gTrajectoryCount<=gTrajectoryStages[0]){
-    if(gTrajectoryCount<=gOrbitLength){
-      if(++gOrbitCount>=261){
+  if (gTrajectoryCount>gPauseLength && gTrajectoryCount<=gTrajectoryStages[0]){
+    if(gTrajectoryCount<=(gPauseLength+gOrbitLength)){
+      if(++gOrbitCount>=214){
         if(++gVBAPDefaultAzimuth[0]==180)gVBAPDefaultAzimuth[0]=-180;
         gOrbitCount=0;
       }
