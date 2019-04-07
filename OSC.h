@@ -235,35 +235,67 @@ int parseMessage(oscpkt::Message msg){
           gVBAPDefaultElevation[1]=gLocationTrials[0][1];
           gInputVolume[1]=0.5;
           gLooping=true;
+          gHRTF=2;
           gCurrentState=kPlaying;
         }
       }
     }
 
-    // If a location is submitted
+    // If a location is submitted:
     else if (msg.match("/two/positionSubmit").popFloat(floatArg).isOkNoMoreArgs()){
-      // then log head-tracked azi/ele for source against current index...
+      // When button is pressed ...
       if(floatArg>0.0){
+        // log head-tracked azi/ele and time taken for current source ...
         gLocalisationResponses[gLocationIndex][0]=gVBAPUpdateAzimuth[1];
         gLocalisationResponses[gLocationIndex][1]=gVBAPUpdateElevation[1];
         gLocalisationResponseTimes[gLocationIndex]=gTimeCounter;
+        // then stop audio.
         gCurrentState=kStopped;
+      }
+      // When button is released ...
+      if(floatArg==0.0){
+        // increment comparison number and azi/ele values ...
+        gLocationIndex++;
+        gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
+        gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
+        // then restart audio and counters.
+        gCurrentState=kPlaying;
         gTimeCounter=0;
         gOSCCounter=0;
-      }
-
-      if(floatArg==0.0){
-        // and if in range, increment comparison number ...
-        if(++gLocationIndex<42){
-          gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
-          gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
-          gLocationText="Target " + to_string(gLocationIndex-1) + " of 40.";
-          gCurrentState=kPlaying;
+        // If an example task, just change the text ...
+        if(gLocationIndex<2){
+          gLocationText="Example " + to_string(gLocationIndex+1);
         }
-        // otherwise close task and write results.
+        // otherwise change the text and check the required HRTF selection.
+        else if(gLocationIndex>=2 && gLocationIndex<42){
+          gLocationText="Target " + to_string(gLocationIndex-1) + " of 40.";
+          if(gLocationIndex<22){
+            if(HRTFComboOrd[0]==0){
+              gHRTF=gLosingHRTF;
+              gLocalisationHRTFState[gLocationIndex]=0;
+            }
+            else {
+              gHRTF=gWinningHRTF;
+              gLocalisationHRTFState[gLocationIndex]=1;
+            }
+          }
+          else {
+            if(HRTFComboOrd[1]==0){
+              gHRTF=gLosingHRTF;
+              gLocalisationHRTFState[gLocationIndex]=0;
+            }
+            else {
+              gHRTF=gWinningHRTF;
+              gLocalisationHRTFState[gLocationIndex]=1;
+            }
+          }
+          gLocalisationHRTF[gLocationIndex]=gHRTF;
+        }
+        // Otherwise close task and write results.
         else {
           gLocationText="END";
           writeLocationResponses();
+          gCurrentState=kStopped;
         }
       }
     }
