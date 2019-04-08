@@ -138,7 +138,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.5;
+    gInputVolume[stream]=0.9;
   }
 }
 

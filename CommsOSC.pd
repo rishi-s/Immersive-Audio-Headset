@@ -14,12 +14,11 @@
 #X floatatom -93 184 5 0 0 0 - - -;
 #X obj -93 152 receive count;
 #X obj 424 389 hsl 361 30 -180 180 0 0 empty empty Source_1_Azimuth
-0 -20 0 15 -261682 -1 -1 15600 0;
+0 -20 0 15 -261682 -1 -1 18000 0;
 #X obj 425 50 vsl 30 181 -90 90 0 0 empty empty Source_1_Elevation
 0 -20 0 15 -261682 -1 -1 9000 0;
-#N canvas 1082 189 773 467 OSCSetup 0;
+#N canvas 551 172 773 467 OSCSetup 1;
 #X obj 58 -140 import mrpeach;
-#X obj 184 96 udpsend;
 #X obj 241 67 packOSC;
 #X msg 241 36 send \$1 \$2;
 #X obj 241 5 pack s i;
@@ -29,22 +28,20 @@
 #X obj 430 75 unpackOSC;
 #X obj 431 122 print;
 #X msg 184 -88 connect 192.168.7.2 7562;
-#X obj 430 31 udpreceive 7563;
+#X obj 430 31 udpreceive 9001;
 #X connect 2 0 1 0;
 #X connect 3 0 2 0;
 #X connect 4 0 3 0;
-#X connect 5 0 4 0;
-#X connect 6 0 4 1;
-#X connect 7 0 10 0;
-#X connect 8 0 9 0;
-#X connect 10 0 1 0;
-#X connect 11 0 8 0;
+#X connect 5 0 3 1;
+#X connect 6 0 9 0;
+#X connect 7 0 8 0;
+#X connect 10 0 7 0;
 #X restore -93 510 pd OSCSetup;
 #X obj 638 49 vsl 30 180 1 100 0 0 empty empty Source_1_Volume 0 -20
 0 15 -204786 -1 -1 16092 0;
 #X obj 638 246 dbtorms;
 #X floatatom 421 431 5 0 0 3 - - -;
-#N canvas 38 237 1311 637 OSCOutputs 1;
+#N canvas 292 40 1311 637 OSCOutputs 0;
 #X obj 245 64 inlet HRTF;
 #X obj 38 69 inlet Calib;
 #X obj 246 168 send control;

@@ -44,10 +44,10 @@ int HRTFComboIdx [21]= {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 int HRTFComboOrd [2] = {0,1};
 
 // index for tournament progress
-int gComparIndex = 0;
+int gComparIndex = 21;
 
 // 2D array to store randomised HRTF tournament, generated on setup
-int gComparMatches [22][2] = {{1,2}};
+int gComparMatches [22][2] = {{7,8}};
 
 // variables to store tournament outcomes
 int gHRTFResponses[22]={};
@@ -74,8 +74,8 @@ int gLocationTrials [42][2] = {{120,0},{80,45}};
 
 // variables to store localisation outcomes
 int gLocalisationResponses[42][2]={};
-int gLocalisationHRTFState[42]={};
-int gLocalisationHRTF[42]={};
+int gLocalisationHRTFState[42]={7,7};
+int gLocalisationHRTF[42]={7,7};
 float gLocalisationResponseTimes[42]={};
 
 

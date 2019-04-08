@@ -33,8 +33,9 @@ float gTimeCounter=0;
 
 OSCServer oscServer;
 OSCClient oscClient;
+OSCClient oscMonitor;
 
-int gHRTF=1;		    // global variable to store HRTF set for binauralisation
+int gHRTF=7;		    // global variable to store HRTF set for binauralisation
 bool gCalibrate=0;  // global variable to store headtracking calibration state
 
 
@@ -189,7 +190,6 @@ int parseMessage(oscpkt::Message msg){
             gPlaybackText="END OF TASK";
             gSubmitText=" ";
             gProgressText="END";
-            gHeadLocked=0;
             for(int i=0;i<7;i++){
               gHRTFResponseCount[i]=count(gHRTFResponses+1,gHRTFResponses+22,i);
               rt_printf("Score for HRTF %i is %i \n", i, gHRTFResponseCount[i]);
@@ -198,6 +198,7 @@ int parseMessage(oscpkt::Message msg){
             getWinnerAndLoser();
             rt_printf("Winning HRTF is %i \n", gWinningHRTF);
             rt_printf("Losing HRTF is %i \n", gLosingHRTF);
+            gHeadLocked=0;
           }
           gChoiceState=kNoneSelected;
           gCurrentState=kStopped;
@@ -233,9 +234,11 @@ int parseMessage(oscpkt::Message msg){
           gInputVolume[0]=0.0;
           gVBAPDefaultAzimuth[1]=gLocationTrials[0][0];
           gVBAPDefaultElevation[1]=gLocationTrials[0][1];
-          gInputVolume[1]=0.5;
+          gInputVolume[1]=0.9;
           gLooping=true;
-          gHRTF=2;
+          gHRTF=7;
+          gTimeCounter=0;
+          gOSCCounter=0;
           gCurrentState=kPlaying;
         }
       }
@@ -306,11 +309,14 @@ int parseMessage(oscpkt::Message msg){
 int localPort = 7562;
 int remotePort = 7563;
 const char* remoteIp = "192.168.1.2";
+int monitorPort = 9001;
+const char* monitorIp = "192.168.1.1";
 
 bool setupOSC(){
     // setup OSC ports
     oscServer.setup(localPort);
     oscClient.setup(remotePort, remoteIp);
+    oscMonitor.setup(monitorPort, monitorIp);
     oscClient.sendMessageNow(oscClient.newMessage.to("/one/choiceText").\
       add(gProgressText).end());
     oscClient.queueMessage(oscClient.newMessage.to("/one/playAText").\
@@ -342,6 +348,10 @@ void checkOSC(){
 }
 
 void sendCurrentStatusOSC(){
+  oscMonitor.queueMessage(oscMonitor.newMessage.to("/check/azimuth").\
+    add(gVBAPDefaultAzimuth[1]).add(gVBAPUpdateAzimuth[1]).end());
+  oscMonitor.queueMessage(oscMonitor.newMessage.to("/check/elevation").\
+    add(gVBAPDefaultElevation[1]).add(gVBAPUpdateElevation[1]).end());
   oscClient.queueMessage(oscClient.newMessage.to("/two/targetText").\
     add(gLocationText).end());
   oscClient.queueMessage(oscClient.newMessage.to("/one/choiceText").\
