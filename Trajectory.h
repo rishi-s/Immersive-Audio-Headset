@@ -26,7 +26,7 @@ int gTrajectoryStages[6]={gRotationLength,
                           gRotationLength+(5*gStopLength)
                           };
 int gOrbitCount=0;
-int gOrbitLength=77175;
+int gOrbitLength=82688;
 
 // function to generate trajectory fixed and repeating trajectory
 void updatePositions(){
@@ -35,7 +35,7 @@ void updatePositions(){
   //orbit trajectory
   if (gTrajectoryCount>gPauseLength && gTrajectoryCount<=gTrajectoryStages[0]){
     if(gTrajectoryCount<=(gPauseLength+gOrbitLength)){
-      if(++gOrbitCount>=214){
+      if(++gOrbitCount>=230){
         if(++gVBAPDefaultAzimuth[0]==180)gVBAPDefaultAzimuth[0]=-180;
         gOrbitCount=0;
       }
