@@ -44,7 +44,7 @@ int HRTFComboIdx [21]= {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 int HRTFComboOrd [2] = {0,1};
 
 // index for tournament progress
-int gComparIndex = 21;
+int gComparIndex = 20;
 
 // 2D array to store randomised HRTF tournament, generated on setup
 int gComparMatches [22][2] = {{7,8}};
@@ -169,7 +169,7 @@ void getWinnerAndLoser(){
 
 }
 
-// write test output data to .csv file
+// write HRTF test output data to .csv file
 void writeHRTFResponses(){
   // Instantiate time class
   time_t thisTime;
@@ -183,6 +183,7 @@ void writeHRTFResponses(){
   // Using localtime()
   currentTimeHere = localtime(&thisTime);
 
+  // write filename and data
   cout << "Current Day, Date and Time is = "
        << asctime(currentTimeHere);
   std::string timeStamp = asctime(currentTimeHere);
@@ -200,7 +201,7 @@ void writeHRTFResponses(){
   }
 }
 
-// write test output data to .csv file
+// write Localisation test output data to .csv file
 void writeLocationResponses(){
   // Instantiate time class
   time_t thisTime;
@@ -214,6 +215,7 @@ void writeLocationResponses(){
   // Using localtime()
   currentTimeHere = localtime(&thisTime);
 
+  // write filename and data
   cout << "Current Day, Date and Time is = "
        << asctime(currentTimeHere);
   std::string timeStamp = asctime(currentTimeHere);
