@@ -16,6 +16,7 @@
 #include "SampleStream.h"       // adapted code for streaming/processing audio
 #include "ABRoutine.h"          // HRTF comparison trial structure
 
+
 extern int gStreams;
 extern int gCurrentState;
 extern bool gHeadLocked;
@@ -27,6 +28,7 @@ extern int gVBAPUpdateElevation[NUM_STREAMS];
 extern bool gHeardAState;
 extern bool gHeardBState;
 extern bool gLooping;
+extern bool setupIMU(int sampleRate);
 
 int gOSCCounter=0;
 float gTimeCounter=0;
@@ -177,6 +179,7 @@ int parseMessage(oscpkt::Message msg){
           gHRTFResponses[gComparIndex]= \
             gComparMatches[gComparIndex][gChoiceState-1];
           gHRTFResponseTimes[gComparIndex]=gTimeCounter;
+          // then reset counters
           gTimeCounter=0;
           gOSCCounter=0;
           // and if in range, increment comparison number ...
@@ -185,7 +188,7 @@ int parseMessage(oscpkt::Message msg){
             gSubmitText=" ";
             gProgressText="Choice " + to_string(gComparIndex) + " of 21.";
           }
-          // otherwise close task and write results.
+          // otherwise close task and write results and prep Localisation task
           else {
             gPlaybackText="END OF TASK";
             gSubmitText=" ";
@@ -198,7 +201,9 @@ int parseMessage(oscpkt::Message msg){
             getWinnerAndLoser();
             rt_printf("Winning HRTF is %i \n", gWinningHRTF);
             rt_printf("Losing HRTF is %i \n", gLosingHRTF);
+            // enable head tracking reading and reinitialise IMU for good measure
             gHeadLocked=0;
+            setupIMU(44100);
           }
           gChoiceState=kNoneSelected;
           gCurrentState=kStopped;
@@ -206,10 +211,17 @@ int parseMessage(oscpkt::Message msg){
       }
     }
   }
+
   // Otherwise, if we have finished the HRTF comparison
   else {
-    //Look for the following messages
-    // If using toggle calibration, rotate through states
+    //Listen for the following messages
+    //IMU reinitialisation
+    if (msg.match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
+      if(floatArg>0.0){
+        setupIMU(44100);
+      }
+    }
+    // If using toggle calibration, rotate through states and notificatons
     if (msg.match("/one/calibrate").popFloat(floatArg).isOkNoMoreArgs()){
       if(floatArg>0.0){
         gCalibrate=1;
@@ -228,15 +240,19 @@ int parseMessage(oscpkt::Message msg){
           gCalibrateState=kDown;
           gCalibrateText="Look down";
         }
+        // For the final state, also prep for the start of the Localisation task:
         else if(gCalibrateState==kElevation){
           gCalibrateState=kAhead;
           gCalibrateText="Look ahead";
+          // update azi/ele and HRTF for source according to Location trial index
+          gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
+          gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
+          gHRTF=gLocalisationHRTF[gLocationIndex];
+          // silence HRTF audio and raise Location trial
           gInputVolume[0]=0.0;
-          gVBAPDefaultAzimuth[1]=gLocationTrials[0][0];
-          gVBAPDefaultElevation[1]=gLocationTrials[0][1];
           gInputVolume[1]=0.9;
+          // switch looping on, reset counters and restart audio
           gLooping=true;
-          gHRTF=7;
           gTimeCounter=0;
           gOSCCounter=0;
           gCurrentState=kPlaying;
@@ -244,61 +260,63 @@ int parseMessage(oscpkt::Message msg){
       }
     }
 
-    // If a location is submitted:
-    else if (msg.match("/two/positionSubmit").popFloat(floatArg).isOkNoMoreArgs()){
-      // When button is pressed ...
-      if(floatArg>0.0){
-        // log head-tracked azi/ele and time taken for current source ...
-        gLocalisationResponses[gLocationIndex][0]=gVBAPUpdateAzimuth[1];
-        gLocalisationResponses[gLocationIndex][1]=gVBAPUpdateElevation[1];
-        gLocalisationResponseTimes[gLocationIndex]=gTimeCounter;
-        // then stop audio.
-        gCurrentState=kStopped;
-      }
-      // When button is released ...
-      if(floatArg==0.0){
-        // increment comparison number and azi/ele values ...
-        gLocationIndex++;
-        gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
-        gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
-        // then restart audio and counters.
-        gCurrentState=kPlaying;
-        gTimeCounter=0;
-        gOSCCounter=0;
-        // If an example task, just change the text ...
-        if(gLocationIndex<2){
-          gLocationText="Example " + to_string(gLocationIndex+1);
-        }
-        // otherwise change the text and check the required HRTF selection.
-        else if(gLocationIndex>=2 && gLocationIndex<42){
-          gLocationText="Target " + to_string(gLocationIndex-1) + " of 40.";
-          if(gLocationIndex<22){
-            if(HRTFComboOrd[0]==0){
-              gHRTF=gLosingHRTF;
-              gLocalisationHRTFState[gLocationIndex]=0;
-            }
-            else {
-              gHRTF=gWinningHRTF;
-              gLocalisationHRTFState[gLocationIndex]=1;
-            }
-          }
-          else {
-            if(HRTFComboOrd[1]==0){
-              gHRTF=gLosingHRTF;
-              gLocalisationHRTFState[gLocationIndex]=0;
-            }
-            else {
-              gHRTF=gWinningHRTF;
-              gLocalisationHRTFState[gLocationIndex]=1;
-            }
-          }
-          gLocalisationHRTF[gLocationIndex]=gHRTF;
-        }
-        // Otherwise close task and write results.
-        else {
-          gLocationText="END";
-          writeLocationResponses();
+    // If a location is submitted within range:
+    else if (gFixedTrajectory && gLocationIndex<42){
+      if (msg.match("/two/positionSubmit").popFloat(floatArg).isOkNoMoreArgs()){
+        // When button is pressed ...
+        if(floatArg>0.0){
+          // log head-tracked azi/ele and time taken for current source ...
+          gLocalisationResponses[gLocationIndex][0]=gVBAPUpdateAzimuth[1];
+          gLocalisationResponses[gLocationIndex][1]=gVBAPUpdateElevation[1];
+          gLocalisationResponseTimes[gLocationIndex]=gTimeCounter;
+          // then stop audio.
           gCurrentState=kStopped;
+        }
+        // When button is released ...
+        if(floatArg==0.0){
+          // increment comparison number and azi/ele values ...
+          gLocationIndex++;
+          gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
+          gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
+          // then restart audio and counters.
+          gCurrentState=kPlaying;
+          gTimeCounter=0;
+          gOSCCounter=0;
+          // If an example task, just change the text ...
+          if(gLocationIndex<2){
+            gLocationText="Example " + to_string(gLocationIndex+1);
+          }
+          // otherwise change the text and check the required HRTF selection.
+          else if(gLocationIndex>=2 && gLocationIndex<42){
+            gLocationText="Target " + to_string(gLocationIndex-1) + " of 40.";
+            if(gLocationIndex<22){
+              if(HRTFComboOrd[0]==0){
+                gHRTF=gLosingHRTF;
+                gLocalisationHRTFState[gLocationIndex]=0;
+              }
+              else {
+                gHRTF=gWinningHRTF;
+                gLocalisationHRTFState[gLocationIndex]=1;
+              }
+            }
+            else if (gLocationIndex >=22 && gLocationIndex<42){
+              if(HRTFComboOrd[1]==0){
+                gHRTF=gLosingHRTF;
+                gLocalisationHRTFState[gLocationIndex]=0;
+              }
+              else {
+                gHRTF=gWinningHRTF;
+                gLocalisationHRTFState[gLocationIndex]=1;
+              }
+            }
+            gLocalisationHRTF[gLocationIndex]=gHRTF;
+          }
+          // Otherwise close task and write results.
+          else {
+            gLocationText="END";
+            writeLocationResponses();
+            gCurrentState=kStopped;
+          }
         }
       }
     }
