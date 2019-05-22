@@ -22,8 +22,8 @@ extern int gStreams;
 extern bool gFixedTrajectory;
 extern bool gTestMode;
 
-int gCurrentState=kStopped;
-bool gHeadLocked=1;
+int gCurrentState=kPlaying;
+bool gHeadLocked=0;
 
 // volume level variables for individual streams
 float gInputVolume[NUM_STREAMS]={};
@@ -138,7 +138,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.9;
+    gInputVolume[stream]=0.3;
   }
 }
 

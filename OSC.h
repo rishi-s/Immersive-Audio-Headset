@@ -37,7 +37,7 @@ OSCServer oscServer;
 OSCClient oscClient;
 OSCClient oscMonitor;
 
-int gHRTF=7;		    // global variable to store HRTF set for binauralisation
+int gHRTF=0;		    // global variable to store HRTF set for binauralisation
 bool gCalibrate=0;  // global variable to store headtracking calibration state
 
 
