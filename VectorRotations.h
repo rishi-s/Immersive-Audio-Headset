@@ -11,10 +11,10 @@
 
 
 // ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[NUM_STREAMS]={0,0,-144,-72,0,72,144,-144,-72,0,72,144};
+int gVBAPDefaultAzimuth[NUM_STREAMS]={-180,0,-144,-72,0,72,144,-144,-72,0,72,144};
 
 // ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[NUM_STREAMS]={0,0,-10,-10,-10,-10,-10,30,30,30,30,30};
+int gVBAPDefaultElevation[NUM_STREAMS]={-45,0,-10,-10,-10,-10,-10,30,30,30,30,30};
 
 //Rotation variables
 float gVBAPDefaultVector[NUM_STREAMS][3];

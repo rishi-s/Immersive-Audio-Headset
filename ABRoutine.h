@@ -44,7 +44,7 @@ int HRTFComboIdx [21]= {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20};
 int HRTFComboOrd [2] = {0,1};
 
 // index for tournament progress
-int gComparIndex = 20;
+int gComparIndex = 0;
 
 // 2D array to store randomised HRTF tournament, generated on setup
 int gComparMatches [22][2] = {{7,8}};
