@@ -26,7 +26,8 @@ int gCurrentState=kPlaying;
 bool gHeadLocked=0;
 
 // volume level variables for individual streams
-float gInputVolume[NUM_STREAMS]={};
+float gInputVolume[NUM_STREAMS]={0.125,0.0625,0.5,0.25,0.125,0.75, \
+                                  0.25,0.1,0.25,0.5,0.75,0.75};
 
 // instantiate the sampleStream class for each stream
 SampleStream *sampleStream[NUM_STREAMS];
@@ -138,7 +139,6 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.3;
   }
 }
 
