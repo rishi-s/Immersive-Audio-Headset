@@ -76,7 +76,7 @@ int parseMessage(oscpkt::Message msg){
     }
   }
 
-  //Global controls (HRTF and head-tracker calibration)
+  //Global controls (HRTF, head-tracker calibration, IMU reinitialisation)
   if (msg.match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received calibrate command %i \n", intArg);
       gCalibrate=intArg;
@@ -87,6 +87,11 @@ int parseMessage(oscpkt::Message msg){
       gHRTF=intArg;
       gCurrentState=kStopped;
       rt_printf("HRTF is %i \n", gHRTF);
+  }
+  else if (msg.match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
+    if(floatArg>0.0){
+      setupIMU(44100);
+    }
   }
 
 
@@ -215,12 +220,6 @@ int parseMessage(oscpkt::Message msg){
   // Otherwise, if we have finished the HRTF comparison
   else {
     //Listen for the following messages
-    //IMU reinitialisation
-    if (msg.match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
-      if(floatArg>0.0){
-        setupIMU(44100);
-      }
-    }
     // If using toggle calibration, rotate through states and notificatons
     if (msg.match("/one/calibrate").popFloat(floatArg).isOkNoMoreArgs()){
       if(floatArg>0.0){
@@ -366,10 +365,10 @@ void checkOSC(){
 }
 
 void sendCurrentStatusOSC(){
-  oscMonitor.queueMessage(oscMonitor.newMessage.to("/check/azimuth").\
-    add(gVBAPDefaultAzimuth[1]).add(gVBAPUpdateAzimuth[1]).end());
-  oscMonitor.queueMessage(oscMonitor.newMessage.to("/check/elevation").\
-    add(gVBAPDefaultElevation[1]).add(gVBAPUpdateElevation[1]).end());
+  oscClient.queueMessage(oscClient.newMessage.to("/one/aziText").\
+    add(to_string(gVBAPUpdateAzimuth[1])).end());
+  oscClient.queueMessage(oscClient.newMessage.to("/one/eleText").\
+    add(to_string(gVBAPUpdateElevation[1])).end());
   oscClient.queueMessage(oscClient.newMessage.to("/two/targetText").\
     add(gLocationText).end());
   oscClient.queueMessage(oscClient.newMessage.to("/one/choiceText").\
