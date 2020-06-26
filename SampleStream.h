@@ -10,7 +10,7 @@
 #include <SampleData.h>          // to store SampleStream data
 #include <string>
 #include <Bela.h>
-#include <sndfile.h>             // to load audio files
+#include <libraries/sndfile/sndfile.h>             // to load audio files
 #include <iostream>
 #include <cstdlib>
 #include "SpatialSceneParams.h"  // definition of audio sources and context

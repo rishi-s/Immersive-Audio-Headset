@@ -10,8 +10,8 @@
 #include <string>
 #include <cstdio>
 #include <Bela.h>
-#include <OSCServer.h>
-#include <OSCClient.h>
+#include <libraries/OscReceiver/OscReceiver.h>
+#include <libraries/OscSender/OscSender.h>
 #include "SpatialSceneParams.h" // definition of audio sources and context
 #include "SampleStream.h"       // adapted code for streaming/processing audio
 #include "ABRoutine.h"          // HRTF comparison trial structure
@@ -33,13 +33,14 @@ extern bool setupIMU(int sampleRate);
 int gOSCCounter=0;
 float gTimeCounter=0;
 
-OSCServer oscServer;
-OSCClient oscClient;
-OSCClient oscMonitor;
+OscReceiver oscServer;
+OscSender oscClient;
+OscSender oscMonitor;
 
 int gHRTF=0;		    // global variable to store HRTF set for binauralisation
 bool gCalibrate=0;  // global variable to store headtracking calibration state
 
+bool handshakeReceived;
 
 void sendCurrentStatusOSC();
 
@@ -47,9 +48,10 @@ void sendCurrentStatusOSC();
 
 
 // parse messages received by OSC Server
-int parseMessage(oscpkt::Message msg){
+void on_receive(oscpkt::Message* msg, void* arg){
+  if(msg->match("/osc-setup-reply")) handshakeReceived = true;
 
-  rt_printf("received message to: %s\n", msg.addressPattern().c_str());
+  rt_printf("received message to: %s\n", msg->addressPattern().c_str());
 
   int intArg;
   float floatArg;
@@ -57,38 +59,37 @@ int parseMessage(oscpkt::Message msg){
   // Channel-based controls (azimuth, elevation, volume)
   for(unsigned int stream=0; stream<gStreams; stream++){
     std::string number=to_string(stream);
-    if (msg.match("/one/azimuth"+number).popInt32(intArg).isOkNoMoreArgs()){
+    if (msg->match("/one/azimuth"+number).popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received azimuth command %i \n", intArg);
       gVBAPDefaultAzimuth[stream]=intArg;
       rt_printf("Source azimuth is %i \n", gVBAPDefaultAzimuth[stream]);
     }
-    else if (msg.match("/one/elevation"+number).popInt32(intArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/elevation"+number).popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received elevation command %i \n", intArg);
       gVBAPDefaultElevation[stream]=intArg;
       rt_printf("Source elevation is %i \n", gVBAPDefaultElevation[stream]);
       gCurrentState=kPlaying;
     }
-    else if (msg.match("/one/volume"+number).popFloat(floatArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/volume"+number).popFloat(floatArg).isOkNoMoreArgs()){
       rt_printf("received volume command %f \n", floatArg);
       gInputVolume[stream]=floatArg;
       rt_printf("Source volume is %f \n", gInputVolume[stream]);
-      return floatArg;
     }
   }
 
   //Global controls (HRTF, head-tracker calibration, IMU reinitialisation)
-  if (msg.match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
+  if (msg->match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received calibrate command %i \n", intArg);
       gCalibrate=intArg;
       rt_printf("Calibration is %i \n", gCalibrate);
   }
-  else if (msg.match("/one/hrtf").popInt32(intArg).isOkNoMoreArgs()){
+  else if (msg->match("/one/hrtf").popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received HRTF command %i \n", intArg);
       gHRTF=intArg;
       gCurrentState=kStopped;
       rt_printf("HRTF is %i \n", gHRTF);
   }
-  else if (msg.match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
+  else if (msg->match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
     if(floatArg>0.0){
       setupIMU(44100);
     }
@@ -100,7 +101,7 @@ int parseMessage(oscpkt::Message msg){
     // Look for the following messages:
 
     // If "Play A" is tapped, set the correct playback text and playing states
-    if (msg.match("/one/playAButton").popFloat(floatArg).isOkNoMoreArgs()){
+    if (msg->match("/one/playAButton").popFloat(floatArg).isOkNoMoreArgs()){
       if(floatArg>0.0){
         gPlaybackText="";
         gPlayingA=false;
@@ -117,7 +118,7 @@ int parseMessage(oscpkt::Message msg){
     }
 
     // If "Play B" is tapped, set the correct playback text and playing state
-    else if (msg.match("/one/playBButton").popFloat(floatArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/playBButton").popFloat(floatArg).isOkNoMoreArgs()){
       if(floatArg>0.0){
         gPlaybackText="";
         gPlayingA=false;
@@ -134,15 +135,14 @@ int parseMessage(oscpkt::Message msg){
     }
 
     // If "Toggle A" is tapped, set the correct states and display values ...
-    else if (msg.match("/one/chooseAToggle").popFloat(floatArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/chooseAToggle").popFloat(floatArg).isOkNoMoreArgs()){
 
       // When both A and B have been heard ...
       if (gHeardAState && gHeardBState){
         // if A is not already on, change state, toggle off B and and set text
         if(gChoiceState == kNoneSelected || gChoiceState == kBSelected) {
           gChoiceState=kASelected;
-          oscClient.queueMessage(oscClient.newMessage.to("/one/chooseBToggle").\
-            add(0.0f).end());
+          oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
           gSubmitText="SUBMIT A";
         }
         // when A is already on, change state and text
@@ -154,7 +154,7 @@ int parseMessage(oscpkt::Message msg){
     }
 
     // If "Toggle B" is tapped, set the correct submit text and selection state
-    else if (msg.match("/one/chooseBToggle").popFloat(floatArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/chooseBToggle").popFloat(floatArg).isOkNoMoreArgs()){
 
       // When both A and B have been heard ...
       if(gHeardAState && gHeardBState){
@@ -172,7 +172,7 @@ int parseMessage(oscpkt::Message msg){
     }
 
     // If "Submit" is tapped ...
-    else if (msg.match("/one/submitAnsButton").popFloat(floatArg).isOkNoMoreArgs()){
+    else if (msg->match("/one/submitAnsButton").popFloat(floatArg).isOkNoMoreArgs()){
       // and there is an option selected, toggle off the correct selection state
       if(gHeardAState && gHeardBState){
         if(gChoiceState!=kNoneSelected){
@@ -221,7 +221,7 @@ int parseMessage(oscpkt::Message msg){
   else {
     //Listen for the following messages
     // If using toggle calibration, rotate through states and notificatons
-    if (msg.match("/one/calibrate").popFloat(floatArg).isOkNoMoreArgs()){
+    if (msg->match("/one/calibrate").popFloat(floatArg).isOkNoMoreArgs()){
       if(floatArg>0.0){
         gCalibrate=1;
         if(gCalibrateState==kAhead) {
@@ -261,7 +261,7 @@ int parseMessage(oscpkt::Message msg){
 
     // If a location is submitted within range:
     else if (gFixedTrajectory && gLocationIndex<42){
-      if (msg.match("/two/positionSubmit").popFloat(floatArg).isOkNoMoreArgs()){
+      if (msg->match("/two/positionSubmit").popFloat(floatArg).isOkNoMoreArgs()){
         // When button is pressed ...
         if(floatArg>0.0){
           // log head-tracked azi/ele and time taken for current source ...
@@ -320,7 +320,6 @@ int parseMessage(oscpkt::Message msg){
       }
     }
   }
-  return intArg;
 }
 
 int localPort = 7562;
@@ -331,88 +330,80 @@ const char* monitorIp = "192.168.1.1";
 
 bool setupOSC(){
     // setup OSC ports
-    oscServer.setup(localPort);
+    oscServer.setup(localPort, on_receive);
     oscClient.setup(remotePort, remoteIp);
     oscMonitor.setup(monitorPort, monitorIp);
-    oscClient.sendMessageNow(oscClient.newMessage.to("/one/choiceText").\
-      add(gProgressText).end());
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playAText").\
-      add(std::string("*Play A*")).end());
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playBText").\
-      add(std::string("*Play B*")).end());
-    oscClient.sendMessageNow(oscClient.newMessage.to("/one/playbackText").\
-      add(gPlaybackText).end());
-    oscClient.sendMessageNow(oscClient.newMessage.to("/one/chooseAToggle").\
-      add(0.0f).end());
-    oscClient.sendMessageNow(oscClient.newMessage.to("/one/chooseBToggle").\
-      add(0.0f).end());
-    oscClient.sendMessageNow(oscClient.newMessage.to("/one/submitAnsText").\
-      add(gSubmitText).end());
+
+    // the following code sends an OSC message to address /osc-setup
+    // then waits 1 second for a reply on /osc-setup-reply
+    oscClient.newMessage("/osc-setup").send();
+    int count = 0;
+    int timeoutCount = 10;
+    printf("Waiting for handshake ....\n");
+    while(!handshakeReceived && ++count != timeoutCount){
+      usleep(100000);
+    }
+    if (handshakeReceived) {
+      printf("handshake received!\n");
+      oscClient.newMessage("/one/choiceText").add(gProgressText).send();
+      oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
+      oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
+      oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
+      oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+      oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
+      oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
+    }
+    else {
+      printf("timeout! : did you start the node server? `node /root/Bela/resources/osc/osc.js\n");
+      return false;
+    }
+
+
 	return true;
 }
 
 void checkOSC(){
+
   // send curret status by OSC
   if(++gOSCCounter>=4410){
     sendCurrentStatusOSC();
     gOSCCounter=0;
     gTimeCounter+=0.1;
   }
-  while (oscServer.messageWaiting()){
-    parseMessage(oscServer.popMessage());
-    sendCurrentStatusOSC();
-  }
 }
 
 void sendCurrentStatusOSC(){
-  oscClient.queueMessage(oscClient.newMessage.to("/one/aziText").\
-    add(to_string(gVBAPUpdateAzimuth[1])).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/one/eleText").\
-    add(to_string(gVBAPUpdateElevation[1])).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/two/targetText").\
-    add(gLocationText).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/one/choiceText").\
-    add(gProgressText).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/one/playbackText").\
-    add(gPlaybackText).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/one/submitAnsText").\
-    add(gSubmitText).end());
-  oscClient.queueMessage(oscClient.newMessage.to("/one/calibrateText").\
-    add(gCalibrateText).end());
+  oscClient.newMessage("/one/aziText").add(to_string(gVBAPUpdateAzimuth[1])).send();
+  oscClient.newMessage("/one/eleText").add(to_string(gVBAPUpdateElevation[1])).send();
+  oscClient.newMessage("/two/targetText").add(gLocationText).send();
+  oscClient.newMessage("/one/choiceText").add(gProgressText).send();
+  oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
+  oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
+  oscClient.newMessage("/one/calibrateText").add(gCalibrateText).send();
   if(gHeardAState){
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playAText").\
-      add(std::string("Play A")).end());
+    oscClient.newMessage("/one/playAText").add(std::string("Play A")).send();
   }
   else {
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playAText").\
-      add(std::string("*Play A*")).end());
+    oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
   }
   if(gHeardBState){
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playBText").\
-      add(std::string("Play B")).end());
+    oscClient.newMessage("/one/playBText").add(std::string("Play B")).send();
   }
   else {
-    oscClient.queueMessage(oscClient.newMessage.to("/one/playBText").\
-      add(std::string("*Play B*")).end());
+    oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
   }
 
   if(gChoiceState==kNoneSelected){
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseAToggle").\
-      add(0.0f).end());
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseBToggle").\
-      add(0.0f).end());
+    oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+    oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
   }
   else if (gChoiceState==kASelected) {
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseAToggle").\
-      add(1.0f).end());
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseBToggle").\
-      add(0.0f).end());
+    oscClient.newMessage("/one/chooseAToggle").add(1.0f).send();
+    oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
   }
   else if (gChoiceState==kBSelected) {
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseAToggle").\
-      add(0.0f).end());
-    oscClient.queueMessage(oscClient.newMessage.to("/one/chooseBToggle").\
-      add(1.0f).end());
+    oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+    oscClient.newMessage("/one/chooseBToggle").add(1.0f).send();
   }
 
 }

@@ -39,6 +39,7 @@ The Bela software is distributed under the GNU Lesser General Public License
 
 
 #include "belaOnUrHead/Bela_BNO055.h"
+#include <iostream>
 
 
 /**************************************************************************
@@ -278,7 +279,7 @@ void I2C_BNO055::writeRegister(uint8_t reg, uint8_t value)
 
 	if(write(i2C_file, buf, 2) != 2)
 	{
-		cout << "Failed to write register " << (int)reg << " on BNO055\n";
+		std::cout << "Failed to write register " << (int)reg << " on BNO055\n";
 		return;
 	}
 }

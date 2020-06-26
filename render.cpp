@@ -6,7 +6,7 @@
 // include files
 #include <Bela.h>
 #include <cmath>
-#include <ne10/NE10.h>			    // neon library
+#include <libraries/ne10/NE10.h>			    // neon library
 #include "SpatialSceneParams.h" // definition of audio sources and context
 #include "SampleStream.h"       // adapted code for streaming/processing audio
 #include "ImpulseLoader.h"      // code for loading HRTF IR files
