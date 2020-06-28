@@ -6,16 +6,16 @@
 // include files
 #include <Bela.h>
 #include <cmath>
-#include <libraries/ne10/NE10.h>			    // neon library
-#include "SpatialSceneParams.h" // definition of audio sources and context
-#include "SampleStream.h"       // adapted code for streaming/processing audio
-#include "ImpulseLoader.h"      // code for loading HRTF IR files
-#include "ImpulseData.h"        // struct file to store IR data
-#include "VBAPData.h"           // lookup tables for VBAP speaker weightings
-#include "TestRoutine.h"        // code for testing defined trajectory
+#include <libraries/ne10/NE10.h>			         // neon library
+#include "spatialisation/SampleStream.h"       // adapted code for streaming/processing audio
+#include "spatialisation/SpatialSceneParams.h" // definition of audio sources and context
+#include "spatialisation/ImpulseLoader.h"      // code for loading HRTF IR files
+#include "spatialisation/ImpulseData.h"        // struct file to store IR data
+#include "spatialisation/VBAPData.h"           // lookup tables for VBAP speaker weightings
+#include "spatialisation/TestRoutine.h"        // code for testing defined trajectory
 #include "OSC.h"                // OSC interfacing
 #include "VectorRotations.h"    // bespoke code for point source vector rotation
-#include "Spatialisation.h"     // spatialisation engine
+#include "spatialisation/Spatialisation.h"     // spatialisation engine
 
 // user controlled variables from main.cpp
 extern int gStreams;
@@ -26,7 +26,7 @@ int gCurrentState=kPlaying;
 bool gHeadLocked=0;
 
 // volume level variables for individual streams
-float gInputVolume[NUM_STREAMS]={0.125,0.0625,0.5,0.25,0.125,0.75, \
+float gInputVolume[NUM_STREAMS]={0.5,0.5,0.5,0.25,0.125,0.75, \
                                   0.25,0.1,0.25,0.5,0.75,0.75};
 
 // instantiate the sampleStream class for each stream

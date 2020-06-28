@@ -12,9 +12,10 @@
 #include <Bela.h>
 #include <libraries/OscReceiver/OscReceiver.h>
 #include <libraries/OscSender/OscSender.h>
-#include "SpatialSceneParams.h" // definition of audio sources and context
-#include "SampleStream.h"       // adapted code for streaming/processing audio
-#include "ABRoutine.h"          // HRTF comparison trial structure
+#include <libraries/Pipe/Pipe.h>
+#include "spatialisation/SpatialSceneParams.h" // definition of audio sources and context
+#include "spatialisation/SampleStream.h"       // adapted code for streaming/processing audio
+#include "spatialisation/ABRoutine.h"          // HRTF comparison trial structure
 
 
 extern int gStreams;
@@ -33,6 +34,8 @@ extern bool setupIMU(int sampleRate);
 int gOSCCounter=0;
 float gTimeCounter=0;
 
+Pipe oscPipe;
+
 OscReceiver oscServer;
 OscSender oscClient;
 OscSender oscMonitor;
@@ -44,12 +47,25 @@ bool handshakeReceived;
 
 void sendCurrentStatusOSC();
 
+// monitor messages received by OSC Server
+void on_receive(oscpkt::Message* msg, void*)
+{
+	// we make a copy of the incoming message and we send it down the pipe to the real-time thread
+	oscpkt::Message* incomingMsg = new oscpkt::Message(msg);
+	oscPipe.writeNonRt(incomingMsg);
 
+	// the real-time thread sends back to us the pointer once it is done with it
+	oscpkt::Message* returnedMsg;
+	while(oscPipe.readNonRt(returnedMsg) > 0)
+	{
+		delete returnedMsg;
+	}
+}
 
 
 // parse messages received by OSC Server
-void on_receive(oscpkt::Message* msg, void* arg){
-  if(msg->match("/osc-setup-reply")) handshakeReceived = true;
+void parseMessage(oscpkt::Message* msg){
+
 
   rt_printf("received message to: %s\n", msg->addressPattern().c_str());
 
@@ -324,39 +340,53 @@ void on_receive(oscpkt::Message* msg, void* arg){
 
 int localPort = 7562;
 int remotePort = 7563;
-const char* remoteIp = "192.168.1.2";
+const char* remoteIp = "127.0.0.1";
 int monitorPort = 9001;
 const char* monitorIp = "192.168.1.1";
 
 bool setupOSC(){
     // setup OSC ports
+	oscPipe.setup("incomingOsc");
     oscServer.setup(localPort, on_receive);
     oscClient.setup(remotePort, remoteIp);
     oscMonitor.setup(monitorPort, monitorIp);
 
     // the following code sends an OSC message to address /osc-setup
-    // then waits 1 second for a reply on /osc-setup-reply
-    oscClient.newMessage("/osc-setup").send();
-    int count = 0;
-    int timeoutCount = 10;
-    printf("Waiting for handshake ....\n");
-    while(!handshakeReceived && ++count != timeoutCount){
-      usleep(100000);
-    }
-    if (handshakeReceived) {
-      printf("handshake received!\n");
-      oscClient.newMessage("/one/choiceText").add(gProgressText).send();
-      oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
-      oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
-      oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
-      oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
-      oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
-      oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
-    }
-    else {
-      printf("timeout! : did you start the node server? `node /root/Bela/resources/osc/osc.js\n");
-      return false;
-    }
+  	oscClient.newMessage("/osc-setup").send();
+
+  	printf("Waiting for handshake ....\n");
+  	// we want to stop our program and wait for a new message to come in.
+  	// therefore, we set the pipe to blocking mode.
+  	oscPipe.setBlockingNonRt(false);
+  	oscPipe.setBlockingRt(true);
+  	oscPipe.setTimeoutMsRt(1000);
+  	oscpkt::Message* msg = nullptr;
+  	int ret = oscPipe.readRt(msg);
+  	bool ok = false;
+  	if(ret > 0) {
+  		if(msg && msg->match("/osc-setup-reply"))
+  		{
+  			printf("handshake received!\n");
+  			ok = true;
+  		}
+  		delete msg;
+  	}
+  	if(!ok) {
+  		fprintf(stderr, "No handshake received: %d\n", ret);
+  		return false;
+  	}
+  	// in the remainder of the program, we will be calling readRt() from render(), and we want it
+  	// to return immediately if there are no new messages available. We therefore set the
+  	// pipe to non-blocking mode
+  	oscPipe.setBlockingRt(false);
+
+    oscClient.newMessage("/one/choiceText").add(gProgressText).send();
+    oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
+    oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
+    oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
+    oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+    oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
+    oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
 
 
 	return true;
@@ -364,8 +394,27 @@ bool setupOSC(){
 
 void checkOSC(){
 
+
   // send curret status by OSC
   if(++gOSCCounter>=4410){
+    oscpkt::Message* msg;
+  	// read incoming messages from the pipe
+  	while(oscPipe.readRt(msg) > 0)
+  	{
+      parseMessage(msg);
+      /*if(msg && msg->match("/osc-test")){
+  			int intArg;
+  			float floatArg;
+  			msg->arg().popInt32(intArg).popFloat(floatArg).isOkNoMoreArgs();
+  			rt_printf("received a message with int %i and float %f\n", intArg, floatArg);
+  			// the call below is not real-time safe, as it may allocate memory. We should not be calling it from here,
+  			// If you see your mode switches (MSW) increase over time, you should really get it out of here.
+  			//oscSender.newMessage("/osc-acknowledge").add(intArg).add(4.2f).add(std::string("OSC message received")).send();
+  		}*/
+  		oscPipe.writeRt(msg); // return the pointer to the other thread, where it will be destroyed
+  	}
+    oscPipe.setBlockingRt(false);
+
     sendCurrentStatusOSC();
     gOSCCounter=0;
     gTimeCounter+=0.1;
@@ -406,6 +455,19 @@ void sendCurrentStatusOSC(){
     oscClient.newMessage("/one/chooseBToggle").add(1.0f).send();
   }
 
+}
+
+void cleanupOSC(){
+	oscpkt::Message* returnedMsg;
+	// drain the pipes, so that any objects trapped in there can be appropriately destroyed
+	while(oscPipe.readRt(returnedMsg) > 0)
+	{
+		delete returnedMsg;
+	}
+	while(oscPipe.readNonRt(returnedMsg) > 0)
+	{
+		delete returnedMsg;
+	}
 }
 
 #endif /* OSC_ */

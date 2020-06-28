@@ -6,7 +6,7 @@
 #ifndef VECTOR_ROTATIONS_H_
 #define VECTOR_ROTATIONS_H_
 
-#include "SpatialSceneParams.h" // definition of audio sources and context
+#include "spatialisation/SpatialSceneParams.h" // definition of audio sources and context
 #include "belaOnUrHead/imuhandler.h"
 
 
