@@ -17,6 +17,9 @@
 #include "VectorRotations.h"    // bespoke code for point source vector rotation
 #include "spatialisation/Spatialisation.h"     // spatialisation engine
 
+#include "reverb/Network.h"
+SDN::Network *reverb;
+
 // user controlled variables from main.cpp
 extern int gStreams;
 extern bool gFixedTrajectory;
@@ -26,8 +29,7 @@ int gCurrentState=kPlaying;
 bool gHeadLocked=0;
 
 // volume level variables for individual streams
-float gInputVolume[NUM_STREAMS]={0.5,0.5,0.5,0.25,0.125,0.75, \
-                                  0.25,0.1,0.25,0.5,0.75,0.75};
+float gInputVolume[NUM_STREAMS]={};
 
 // instantiate the sampleStream class for each stream
 SampleStream *sampleStream[NUM_STREAMS];
@@ -45,6 +47,15 @@ void applyTestCoords();
 // configure Bela environment for playback
 bool setup(BelaContext *context, void *userData)
 {
+  // create listening environment
+  float width, length, height, distance;
+	width = 10;
+	length = 12;
+	height = 6;
+	distance = 3;
+  reverb = new SDN::Network(context->audioSampleRate, width, length, height);
+	reverb->setSourcePosition(width/2 + distance, length/2, 1.5);
+	reverb->setMicPosition(width/2, length/2, 1.6);
   system("ifdown wlan0; ifup wlan0;");
   setupIMU(context->audioSampleRate);
   // set up button pin for calibration, if used
@@ -54,6 +65,7 @@ bool setup(BelaContext *context, void *userData)
   prepFFTBuffers();                              // set up FFT
   transformHRIRs(gHRIRLength, gConvolutionSize); // convert HRIRs to Hz domain
   getVBAPMatrix();                               // import VBAP speaker gains
+  createVectors(gStreams);
   setupOSC();                                    // setup OSC communication
   if(gFixedTrajectory){
     createPairs();                               // create HRTF tournament
@@ -63,6 +75,8 @@ bool setup(BelaContext *context, void *userData)
   initFFTProcesses();                            // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;          // fill buffers
+  reverb->getNodeElevations(gVBAPDefaultElevation);
+	reverb->getNodeAzimuths(gVBAPDefaultAzimuth);
   return true;
 }
 
@@ -107,13 +121,16 @@ void render(BelaContext *context, void *userData){
 
       // run the spatialisation algorithm
       spatialiseAudio();
+      sampleStream[1]->togglePlayback(1);
+      sampleStream[1]->processFrame();
+      float in = sampleStream[1]->getSample(0) \
+        * gInputVolume[1];
+      float reverbOutput[6] = {};
+			reverb->process(in, reverbOutput);
 
       // process and read frames for each sampleStream object into input buffer
       for(int stream=0; stream<gStreams; stream++){
-        sampleStream[stream]->togglePlayback(1);
-        sampleStream[stream]->processFrame();
-        gInputBuffer[stream][gInputBufferPointer] = sampleStream[stream]->getSample(0) \
-          * gInputVolume[stream];
+        gInputBuffer[stream][gInputBufferPointer] = reverbOutput[stream];
       }
       // copy output buffer L/R to audio output L/R
       for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
@@ -139,6 +156,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
+    gInputVolume[stream]=0.9;
   }
 }
 

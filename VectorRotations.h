@@ -44,7 +44,6 @@ void createVectors(int streams){
 // function to rotate input stream point source locations using head-tracker
 // YPR input data
 void rotateVectors(int streams){
-  createVectors(streams);
   //calculate yaw rotation matrix values
   float yawRot[3]={0};
   float yawSin = sin(ypr[0]);
