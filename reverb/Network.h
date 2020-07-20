@@ -36,7 +36,7 @@ namespace SDN
 		int connectionCount = 0;
 
 		SDN::Point source = SDN::Point(2.5, 4.0, 1.5); // default source position
-		SDN::Point mic = SDN::Point(2.5, 0.5, 1.8); // default source position
+		SDN::Point mic = SDN::Point(2.5, 0.5, 1.8); // default mic position
 
 		SDN::Boundary bounds[nodeCount]; // walls
 

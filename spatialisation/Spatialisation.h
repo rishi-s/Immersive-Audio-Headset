@@ -28,10 +28,10 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gHRIRLength = 512;
-int gFFTSize = 512;
-int gConvolutionSize = gFFTSize+gHRIRLength;
-int gHopSize = gFFTSize/2;
+int gHRIRLength = 256;
+int gConvolutionInputSize = 1024;
+int gHopSize = gConvolutionInputSize/2;
+int gConvolutionSize = gConvolutionInputSize+gHRIRLength;
 float gFFTScaleFactor = 0;
 
 // buffers and configuration for Neon FFT processing
@@ -86,13 +86,13 @@ bool initFFTProcesses(){
   gOutputBufferWritePointer = gHopSize;
 
   // allocate the window buffer based on the FFT size
-  gWindowBuffer = (float *)malloc(gFFTSize * sizeof(float));
+  gWindowBuffer = (float *)malloc(gConvolutionInputSize * sizeof(float));
   if(gWindowBuffer == 0)
   	return false;
 
   // calculate a Hann window for overlap/add processing
-  for(int n = 0; n < gFFTSize; n++) {
-  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gFFTSize - 1)));
+  for(int n = 0; n < gConvolutionInputSize; n++) {
+  	gWindowBuffer[n] = 0.5f * (1.0f - cosf(2.0 * M_PI * n / (float)(gConvolutionInputSize - 1)));
   }
   return true;
 }
@@ -110,17 +110,19 @@ void process_fft()
   // create the binaural signal for each speaker and sum to the L/R outputs
   for(int speaker=0; speaker<NUM_SPEAKERS;speaker++){
     // copy individual streams into FFT buffer
-    pointer = (gFFTInputBufferPointer - gFFTSize + BUFFER_SIZE) % BUFFER_SIZE;
+    pointer = (gFFTInputBufferPointer - gConvolutionInputSize + BUFFER_SIZE) % BUFFER_SIZE;
     for(int n = 0; n < gConvolutionSize; n++) {
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker gains.
-      if(n<gFFTSize){
+      if(n<gConvolutionInputSize){
         for(int stream=0; stream<gStreams;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[stream][pointer] \
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
+        // Add the reverb generator output to each virtual loudspeaker
+        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[gStreams][pointer] * gWindowBuffer[n];
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
         pointer++;
@@ -209,6 +211,9 @@ void spatialiseAudio(){
     // calculate and apply rotations to sources and lookup revised position ...
     if(gHeadTracking && !gHeadLocked){
       scheduleIMU();
+      // print for reference
+      // rt_printf("Yaw is %f; Pitch is %f; Roll is %f \n", ypr[0],ypr[1],ypr[2]);
+
       rotateVectors(gStreams);
     }
     // .. otherwise use the default locations and lookup that position.

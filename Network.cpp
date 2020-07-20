@@ -22,7 +22,7 @@ namespace SDN
 		bounds[2] = SDN::Boundary(0.0, SDN::Plane::XZ);
 		bounds[3] = SDN::Boundary(length, SDN::Plane::XZ);
 		// bounds[4] = SDN::Boundary(0.0, SDN::Plane::XY);
-		// bounds[5] = SDN::Boundary(height, SDN::Plane::XY);
+		//bounds[5] = SDN::Boundary(height, SDN::Plane::XY);
 
 		// calculate number of connections and initialise node positions
 		for(int node = 0; node < nodeCount; node++)
@@ -57,13 +57,12 @@ namespace SDN
 
 //		setAbsorptionAmount(0.01);
 		// small room
-		nodes[0].setAbsorption(0.1);
-		nodes[1].setAbsorption(0.1);
+		nodes[0].setAbsorption(0.2);
+		nodes[1].setAbsorption(0.2);
 		nodes[2].setAbsorption(0.1);
 		nodes[3].setAbsorption(0.1);
-
-		// nodes[4].setAbsorption(0.4); //floor
-		// nodes[5].setAbsorption(0.7); // ceiling
+		//nodes[4].setAbsorption(0.4); //floor
+		//nodes[5].setAbsorption(0.7); // ceiling
 //		nodes[5].setAbsorption(0.4); // ceiling
 	}
 
@@ -120,7 +119,7 @@ namespace SDN
 	{
 		scatter(in);
 
-		auto out = sourceMicDelay->readWithDistanceAttenuation(); // get value from delay line and attenuate by 1/r
+		auto out = 0.0; /*sourceMicDelay->readWithDistanceAttenuation(); // get value from delay line and attenuate by 1/r*/
 
 		for(int node = 0; node < nodeCount; node++)
 		{

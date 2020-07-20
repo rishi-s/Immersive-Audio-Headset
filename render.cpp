@@ -49,10 +49,10 @@ bool setup(BelaContext *context, void *userData)
 {
   // create listening environment
   float width, length, height, distance;
-	width = 10;
-	length = 12;
-	height = 6;
-	distance = 3;
+	width = 5;
+	length = 5;
+	height = 3;
+	distance = 1;
   reverb = new SDN::Network(context->audioSampleRate, width, length, height);
 	reverb->setSourcePosition(width/2 + distance, length/2, 1.5);
 	reverb->setMicPosition(width/2, length/2, 1.6);
@@ -121,10 +121,12 @@ void render(BelaContext *context, void *userData){
 
       // run the spatialisation algorithm
       spatialiseAudio();
+
+      /* ----------
+      CY TEST IMPLEMENTATION
       sampleStream[1]->togglePlayback(1);
       sampleStream[1]->processFrame();
-      float in = sampleStream[1]->getSample(0) \
-        * gInputVolume[1];
+      float in = sampleStream[1]->getSample(0) * gInputVolume[1];
       float reverbOutput[6] = {};
 			reverb->process(in, reverbOutput);
 
@@ -132,6 +134,26 @@ void render(BelaContext *context, void *userData){
       for(int stream=0; stream<gStreams; stream++){
         gInputBuffer[stream][gInputBufferPointer] = reverbOutput[stream];
       }
+      ---------- */
+
+
+      float reverbInput=0.0;
+
+
+      // process and read frames for each sampleStream object into input buffers
+      for(int stream=0; stream<gStreams; stream++){
+        sampleStream[stream]->togglePlayback(1);
+        sampleStream[stream]->processFrame();
+        // feed stream to reverb generator
+        reverbInput += sampleStream[stream]->getSample(0) * gInputVolume[stream] * 0.3;
+        // add stream to input buffer
+        gInputBuffer[stream][gInputBufferPointer] = \
+          sampleStream[stream]->getSample(0) * gInputVolume[stream];
+      }
+
+      // add reverb output to spare stream
+      gInputBuffer[gStreams][gInputBufferPointer] = reverb->scatterMono(reverbInput);
+
       // copy output buffer L/R to audio output L/R
       for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
         if(channel == 0) {
@@ -156,7 +178,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.9;
+    gInputVolume[stream]=0.3;
   }
 }
 
