@@ -16,6 +16,7 @@
 #include "OSC.h"                // OSC interfacing
 #include "VectorRotations.h"    // bespoke code for point source vector rotation
 #include "spatialisation/Spatialisation.h"     // spatialisation engine
+#include "spatialisation/SpatialFocus.h"     // spatialisation engine
 
 #include "reverb/Network.h"
 SDN::Network *reverb;
@@ -26,7 +27,7 @@ extern bool gFixedTrajectory;
 extern bool gTestMode;
 
 int gCurrentState=kPlaying;
-bool gHeadLocked=0;
+bool gHeadLocked=1;
 
 // volume level variables for individual streams
 float gInputVolume[NUM_STREAMS]={};
@@ -53,9 +54,9 @@ bool setup(BelaContext *context, void *userData)
 	length = 5;
 	height = 3;
 	distance = 1;
-  reverb = new SDN::Network(context->audioSampleRate, width, length, height);
-	reverb->setSourcePosition(width/2 + distance, length/2, 1.5);
-	reverb->setMicPosition(width/2, length/2, 1.6);
+  //reverb = new SDN::Network(context->audioSampleRate, width, length, height);
+	//reverb->setSourcePosition(width/2 + distance, length/2, 1.5);
+	//reverb->setMicPosition(width/2, length/2, 1.6);
   system("ifdown wlan0; ifup wlan0;");
   setupIMU(context->audioSampleRate);
   // set up button pin for calibration, if used
@@ -65,8 +66,9 @@ bool setup(BelaContext *context, void *userData)
   prepFFTBuffers();                              // set up FFT
   transformHRIRs(gHRIRLength, gConvolutionSize); // convert HRIRs to Hz domain
   getVBAPMatrix();                               // import VBAP speaker gains
-  createVectors(gStreams);
+  createVectors(gStreams);                       // create starting vectors
   setupOSC();                                    // setup OSC communication
+  initFocusLevels();                             // calculate focus gain values
   if(gFixedTrajectory){
     createPairs();                               // create HRTF tournament
     createLocations();
@@ -75,8 +77,8 @@ bool setup(BelaContext *context, void *userData)
   initFFTProcesses();                            // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;          // fill buffers
-  reverb->getNodeElevations(gVBAPDefaultElevation);
-	reverb->getNodeAzimuths(gVBAPDefaultAzimuth);
+  //reverb->getNodeElevations(gVBAPDefaultElevation);
+	//reverb->getNodeAzimuths(gVBAPDefaultAzimuth);
   return true;
 }
 
@@ -116,11 +118,14 @@ void render(BelaContext *context, void *userData){
       //use a defined 10 second trajectory for HRTF selection purposes
       if(gFixedTrajectory && !gTestMode)updatePositions();
 
-      //use a defined test routine for verifying HRTF convolution outputs
-      if(gTestMode)applyTestCoords();
+
 
       // run the spatialisation algorithm
       spatialiseAudio();
+
+      //use a defined test routine for verifying HRTF convolution outputs
+      if(gTestMode)applyTestCoords();
+
 
       /* ----------
       CY TEST IMPLEMENTATION
@@ -136,8 +141,9 @@ void render(BelaContext *context, void *userData){
       }
       ---------- */
 
+      //getFocusValues();
 
-      float reverbInput=0.0;
+      //float reverbInput=0.0;
 
 
       // process and read frames for each sampleStream object into input buffers
@@ -145,14 +151,14 @@ void render(BelaContext *context, void *userData){
         sampleStream[stream]->togglePlayback(1);
         sampleStream[stream]->processFrame();
         // feed stream to reverb generator
-        reverbInput += sampleStream[stream]->getSample(0) * gInputVolume[stream] * 0.3;
+        //reverbInput += sampleStream[stream]->getSample(0) * gInputVolume[stream] * 0.3;
         // add stream to input buffer
         gInputBuffer[stream][gInputBufferPointer] = \
           sampleStream[stream]->getSample(0) * gInputVolume[stream];
       }
 
       // add reverb output to spare stream
-      gInputBuffer[gStreams][gInputBufferPointer] = reverb->scatterMono(reverbInput);
+      //gInputBuffer[gStreams][gInputBufferPointer] = reverb->scatterMono(reverbInput);
 
       // copy output buffer L/R to audio output L/R
       for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
@@ -178,7 +184,7 @@ void loadAudioFiles(){
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE);
-    gInputVolume[stream]=0.3;
+    gInputVolume[stream]=1.0;
   }
 }
 

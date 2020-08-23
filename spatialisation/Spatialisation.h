@@ -28,7 +28,7 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gHRIRLength = 256;
+int gHRIRLength = 512;
 int gConvolutionInputSize = 1024;
 int gHopSize = gConvolutionInputSize/2;
 int gConvolutionSize = gConvolutionInputSize+gHRIRLength;

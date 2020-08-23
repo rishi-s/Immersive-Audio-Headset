@@ -8,7 +8,7 @@ extern bool gPlayingA;
 extern bool gPlayingB;
 bool gHeardAState=false;
 bool gHeardBState=false;
-bool gLooping=true;
+bool gLooping=false;
 
 
 #include "SampleStream.h" // adapted code for streaming/processing audio

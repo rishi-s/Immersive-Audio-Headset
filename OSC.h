@@ -340,7 +340,7 @@ void parseMessage(oscpkt::Message* msg){
 
 int localPort = 7562;
 int remotePort = 7563;
-const char* remoteIp = "127.0.0.1";
+const char* remoteIp = "192.168.1.2";
 int monitorPort = 9001;
 const char* monitorIp = "192.168.1.1";
 
@@ -397,6 +397,7 @@ void checkOSC(){
 
   // send curret status by OSC
   if(++gOSCCounter>=4410){
+
     oscpkt::Message* msg;
   	// read incoming messages from the pipe
   	while(oscPipe.readRt(msg) > 0)
@@ -413,9 +414,8 @@ void checkOSC(){
   		}*/
   		oscPipe.writeRt(msg); // return the pointer to the other thread, where it will be destroyed
   	}
+		sendCurrentStatusOSC();
     oscPipe.setBlockingRt(false);
-
-    sendCurrentStatusOSC();
     gOSCCounter=0;
     gTimeCounter+=0.1;
   }
