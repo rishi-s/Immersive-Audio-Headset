@@ -30,6 +30,7 @@ extern bool gHeardAState;
 extern bool gHeardBState;
 extern bool gLooping;
 extern bool setupIMU(int sampleRate);
+extern void changeAudioFiles();
 
 int gOSCCounter=0;
 float gTimeCounter=0;
@@ -42,6 +43,7 @@ OscSender oscMonitor;
 
 int gHRTF=0;		    // global variable to store HRTF set for binauralisation
 bool gCalibrate=0;  // global variable to store headtracking calibration state
+bool gSceneMode=0;	// global variable to store headtracking calibration state
 
 bool handshakeReceived;
 
@@ -71,6 +73,12 @@ void parseMessage(oscpkt::Message* msg){
 
   int intArg;
   float floatArg;
+	if (msg->match("/two/IO/1/1").popFloat(floatArg).isOkNoMoreArgs()){
+			rt_printf("received SOLO command %f \n", floatArg);
+			if(floatArg==0.0) gSceneMode=false;
+			else gSceneMode=true;
+			rt_printf("Mode is %i \n", gSceneMode);
+	}
 
   // Channel-based controls (azimuth, elevation, volume)
   for(unsigned int stream=0; stream<gStreams; stream++){
@@ -109,6 +117,11 @@ void parseMessage(oscpkt::Message* msg){
     if(floatArg>0.0){
       setupIMU(44100);
     }
+	}
+	else if (msg->match("/one/change").popFloat(floatArg).isOkNoMoreArgs()){
+		if(floatArg>0.0){
+	  	changeAudioFiles();
+	  }
   }
 
 
@@ -335,6 +348,7 @@ void parseMessage(oscpkt::Message* msg){
         }
       }
     }
+
   }
 }
 

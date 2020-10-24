@@ -27,7 +27,7 @@ extern bool gFixedTrajectory;
 extern bool gTestMode;
 
 int gCurrentState=kPlaying;
-bool gHeadLocked=1;
+bool gHeadLocked=0;
 
 // volume level variables for individual streams
 float gInputVolume[NUM_STREAMS]={};
@@ -54,9 +54,9 @@ bool setup(BelaContext *context, void *userData)
 	length = 5;
 	height = 3;
 	distance = 1;
-  //reverb = new SDN::Network(context->audioSampleRate, width, length, height);
-	//reverb->setSourcePosition(width/2 + distance, length/2, 1.5);
-	//reverb->setMicPosition(width/2, length/2, 1.6);
+  reverb = new SDN::Network(context->audioSampleRate, width, length, height);
+	reverb->setSourcePosition(width/2, length/2 + distance, 1.5);
+	reverb->setMicPosition(width/2, length/2, 1.6);
   system("ifdown wlan0; ifup wlan0;");
   setupIMU(context->audioSampleRate);
   // set up button pin for calibration, if used
@@ -68,7 +68,7 @@ bool setup(BelaContext *context, void *userData)
   getVBAPMatrix();                               // import VBAP speaker gains
   createVectors(gStreams);                       // create starting vectors
   setupOSC();                                    // setup OSC communication
-  initFocusLevels();                             // calculate focus gain values
+  initFocusScene();                             // calculate focus gain values
   if(gFixedTrajectory){
     createPairs();                               // create HRTF tournament
     createLocations();
@@ -77,8 +77,8 @@ bool setup(BelaContext *context, void *userData)
   initFFTProcesses();                            // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;          // fill buffers
-  //reverb->getNodeElevations(gVBAPDefaultElevation);
-	//reverb->getNodeAzimuths(gVBAPDefaultAzimuth);
+  reverb->getNodeElevations(gVBAPDefaultElevation);
+	reverb->getNodeAzimuths(gVBAPDefaultAzimuth);
   return true;
 }
 
@@ -141,9 +141,9 @@ void render(BelaContext *context, void *userData){
       }
       ---------- */
 
-      //getFocusValues();
+      getFocusValues();
 
-      //float reverbInput=0.0;
+      float reverbInput=0.0;
 
 
       // process and read frames for each sampleStream object into input buffers
@@ -151,14 +151,14 @@ void render(BelaContext *context, void *userData){
         sampleStream[stream]->togglePlayback(1);
         sampleStream[stream]->processFrame();
         // feed stream to reverb generator
-        //reverbInput += sampleStream[stream]->getSample(0) * gInputVolume[stream] * 0.3;
+        reverbInput += sampleStream[stream]->getSample(0) * gInputVolume[stream]*0.3;
         // add stream to input buffer
         gInputBuffer[stream][gInputBufferPointer] = \
           sampleStream[stream]->getSample(0) * gInputVolume[stream];
       }
 
       // add reverb output to spare stream
-      //gInputBuffer[gStreams][gInputBufferPointer] = reverb->scatterMono(reverbInput);
+      gInputBuffer[gStreams][gInputBufferPointer] = reverb->scatterMono(reverbInput);
 
       // copy output buffer L/R to audio output L/R
       for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
@@ -188,6 +188,15 @@ void loadAudioFiles(){
   }
 }
 
+// function to change audio streams during playback
+void changeAudioFiles(){
+    // stop the current track and delete the playback object
+    sampleStream[4]->stopPlaying();
+    // create a new playback object and load the replacement .wav file
+    std::string file= "./tracks/track6.wav";
+    const char * id = file.c_str();
+    sampleStream[4]->openFile(id,NUM_CHANNELS,BUFFER_SIZE);
+}
 
 void reinitialiseAudioStreams(){
   // stop all streams and set to refill input buffers

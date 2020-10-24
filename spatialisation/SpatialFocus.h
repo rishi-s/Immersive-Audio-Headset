@@ -14,20 +14,35 @@ extern int gStreams;
 extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
 extern int gVBAPUpdateAzimuth[NUM_STREAMS];
+extern bool gSceneMode;
 
-int gFocusLevels = 25;
-float gFocusLevelValues[25]={};
+int gFocusScene = 45;
+float gFocusSceneValues[2][45]={};
 
 int gainCheck=0;
 
 
-// function to set logarithmic focus level values
-void initFocusLevels(){
+// function to set logarithmic focus level values for concurrent scene state
+void initFocusScene(){
   // loop through applicable focus positions and calculate log gain
-  for(int i=gFocusLevels; i>5; i--){
-    gFocusLevelValues[i]=log10((i-4.0)/(gFocusLevels-4.0)) / log10(gFocusLevels-4.0) * -1.0;
-    gFocusLevelValues[i-6]=1.0;
-    rt_printf("Level %i is: %f\n", i, gFocusLevelValues[i]);
+  for(int i=gFocusScene; i>5; i--){
+    if(i <= 25){
+      // calculate gain for current position
+      gFocusSceneValues[1][i]=log10((i-4.0)/(25-4.0)) / \
+        log10(25-4.0) * -1.0;
+      // overwrite first six positions with no attenuation
+      gFocusSceneValues[1][i-6]=1.0;
+    }
+    if(i >= 31){
+      gFocusSceneValues[0][i]=log10((i-19.0)/26) / log10(26) * -1.0;
+      gFocusSceneValues[0][i-6]=0.5;
+    }
+    else{
+      gFocusSceneValues[0][i]=log10((i+6.0)/121) / log10(121) * -1.0;
+      gFocusSceneValues[0][i-6]=0.5;
+    }
+    rt_printf("Scene Level %i is: %f; Track Level %i is: %f\n",\
+      i, gFocusSceneValues[0][i], i, gFocusSceneValues[1][i]);
   }
 }
 
@@ -37,7 +52,8 @@ void getFocusValues(){
   // loop through each source
   for(int stream=0; stream<gStreams; stream++){
     // if the source is out of range, silence it
-    if(gVBAPUpdateAzimuth[stream]>= gFocusLevels || gVBAPUpdateAzimuth[stream]<=(gFocusLevels*-1)){
+    if(gVBAPUpdateAzimuth[stream]>= gFocusScene || \
+        gVBAPUpdateAzimuth[stream]<=(gFocusScene*-1)){
         gInputVolume[stream]=0.0;
       }
       // otherwise, pick the appropriate gain based on its azimuth
@@ -50,11 +66,11 @@ void getFocusValues(){
       else{
         position = gVBAPUpdateAzimuth[stream];
       }
-    gInputVolume[stream]=gFocusLevelValues[position];
+    gInputVolume[stream]=gFocusSceneValues[gSceneMode][position];
     }
-    if(gainCheck>=4410){
-      rt_printf("Azimuth %i is: %i; level is: %f\n", stream, gVBAPUpdateAzimuth[stream],\
-        gInputVolume[stream]);
+    if(gainCheck>=8820){
+      //rt_printf("Azimuth %i is: %i; level is: %f\n", stream, \
+        gVBAPUpdateAzimuth[stream], gInputVolume[stream]);
       gainCheck=0;
     }
   }
