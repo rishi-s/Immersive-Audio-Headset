@@ -53,14 +53,15 @@ namespace SDN
 			nodeToMicDelays[node] = *Delay::fromDistance(sampleRate, mic.distanceTo(nodes[node].getPosition()));
 		}
 
-		sourceMicDelay = Delay::fromDistance(sampleRate, source.distanceTo(mic));
+		//AMEND: sourceMicDelay is overriden by drySourcesToMicDelays
+		//sourceMicDelay = Delay::fromDistance(sampleRate, source.distanceTo(mic));
 
 //		setAbsorptionAmount(0.01);
 		// small room
 		nodes[0].setAbsorption(0.2);
 		nodes[1].setAbsorption(0.2);
-		nodes[2].setAbsorption(0.1);
-		nodes[3].setAbsorption(0.1);
+		nodes[2].setAbsorption(0.4);
+		nodes[3].setAbsorption(0.3);
 		//nodes[4].setAbsorption(0.4); //floor
 		//nodes[5].setAbsorption(0.7); // ceiling
 //		nodes[5].setAbsorption(0.4); // ceiling
@@ -85,6 +86,7 @@ namespace SDN
 
 		return out;
 	}
+
 
 	// returns a stereo signal of a the reverberation.
 	StereoOutput Network::scatterStereo(float in)
@@ -115,10 +117,12 @@ namespace SDN
 
 
 	// method for scattering only in mono
+	// AMEND: Using a combined input signal from several sources
 	float Network::scatterMono(float in)
 	{
 		scatter(in);
 
+		/*AMEND: Do not create a source-to-mic delay of the combined input signal*/
 		auto out = 0.0; /*sourceMicDelay->readWithDistanceAttenuation(); // get value from delay line and attenuate by 1/r*/
 
 		for(int node = 0; node < nodeCount; node++)
@@ -141,7 +145,8 @@ namespace SDN
 	// main reverberation method
 	void Network::scatter(float in)
 	{
-		sourceMicDelay->write(in);
+		//AMEND: sourceMicDelay not active; input is combined source
+		//sourceMicDelay->write(in);
 
 		// for each node, gather inputs
 		for(int node = 0; node < nodeCount; node++)
@@ -159,6 +164,23 @@ namespace SDN
 		source.setZ(z);
 
 		updateNodePositions();
+	}
+
+	float Network::addDrySource(int sampleRate, float x, float y, float z, int sourceIndex) {
+		drySources[sourceIndex].setX(x);
+		drySources[sourceIndex].setY(y);
+		drySources[sourceIndex].setZ(z);
+		drySourceToMicDelays[sourceIndex] = *Delay::fromDistance(sampleRate, drySources[sourceIndex].distanceTo(mic));
+		return drySourceToMicDelays[sourceIndex].getDelayDistance();
+	}
+
+	void Network::writeToDrySource(float in, int sourceIndex){
+		drySourceToMicDelays[sourceIndex].write(in);
+	}
+
+	float Network::readFromDrySource(int sourceIndex){
+		float out=drySourceToMicDelays[sourceIndex].readWithDistanceAttenuation();
+		return out;
 	}
 
 	void Network::setMicPosition(float x, float y, float z) {
@@ -194,8 +216,8 @@ namespace SDN
 			sourceToNodeDelays[node].setDelayLengthFromDistance(source.distanceTo(nodes[node].getPosition()));
 			nodeToMicDelays[node].setDelayLengthFromDistance(mic.distanceTo(nodes[node].getPosition()));
 		}
-
-		sourceMicDelay->setDelayLengthFromDistance(source.distanceTo(mic));
+		//AMEND: sourceMicDelay not active; input is combined source
+		//sourceMicDelay->setDelayLengthFromDistance(source.distanceTo(mic));
 	}
 
 	void Network::setAbsorptionAmount(const float amount) {

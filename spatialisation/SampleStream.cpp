@@ -8,18 +8,17 @@ extern bool gPlayingA;
 extern bool gPlayingB;
 bool gHeardAState=false;
 bool gHeardBState=false;
-bool gLooping=true;
 
 
 #include "SampleStream.h" // adapted code for streaming/processing audio
 
 // method to create new sample stream with file, number of channels, buffer size
-SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength) {
+SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength, bool looping) {
 
     gSampleBuf[0] = NULL; //load buffer pointer
     gSampleBuf[1] = NULL; //playback buffer pointer
 
-    openFile(filename,numChannels,bufferLength); //open audio file
+    openFile(filename,numChannels,bufferLength,looping); //open audio file
 
 }
 
@@ -40,7 +39,7 @@ SampleStream::~SampleStream() {
 
 // method to load samples from audio file into buffer
 int SampleStream::openFile(const char* filename, int numChannels, \
-      int bufferLength) {
+      int bufferLength, bool looping) {
 
 
     // set loading state to true
@@ -88,6 +87,8 @@ int SampleStream::openFile(const char* filename, int numChannels, \
     gFadeDirection = -1;
 
     gNumFramesInFile = getNumFrames(gFilename);
+
+    gLooping = looping;
 
     // check length of file exceeds buffer size
     if(gNumFramesInFile <= gBufferLength) {

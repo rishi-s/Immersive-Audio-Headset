@@ -28,7 +28,7 @@ int gFFTInputBufferPointer;
 int gFFTOutputBufferPointer;
 float *gWindowBuffer;
 int gSampleCount = 0;
-int gHRIRLength = 512;
+int gHRIRLength = 256;
 int gConvolutionInputSize = 1024;
 int gHopSize = gConvolutionInputSize/2;
 int gConvolutionSize = gConvolutionInputSize+gHRIRLength;
@@ -122,7 +122,8 @@ void process_fft()
           * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
         }
         // Add the reverb generator output to each virtual loudspeaker
-        signalTimeDomainIn[n].r += (ne10_float32_t) gInputBuffer[gStreams][pointer] * gWindowBuffer[n];
+        signalTimeDomainIn[n].r += (ne10_float32_t) \
+          gInputBuffer[NUM_STREAMS-1][pointer] * gWindowBuffer[n];
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
         pointer++;

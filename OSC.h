@@ -7,6 +7,7 @@
 #ifndef OSC_
 #define OSC_
 
+#include <iostream>
 #include <string>
 #include <cstdio>
 #include <Bela.h>
@@ -28,9 +29,12 @@ extern int gVBAPUpdateAzimuth[NUM_STREAMS];
 extern int gVBAPUpdateElevation[NUM_STREAMS];
 extern bool gHeardAState;
 extern bool gHeardBState;
-extern bool gLooping;
+//extern bool gLooping;
+extern float gMainVol;
 extern bool setupIMU(int sampleRate);
 extern void changeAudioFiles();
+extern void pauseAudioFiles();
+extern void startTrajectory();
 
 int gOSCCounter=0;
 float gTimeCounter=0;
@@ -43,7 +47,12 @@ OscSender oscMonitor;
 
 int gHRTF=0;		    // global variable to store HRTF set for binauralisation
 bool gCalibrate=0;  // global variable to store headtracking calibration state
-bool gSceneMode=0;	// global variable to store headtracking calibration state
+bool gCurrentSceneMode=false;	// global variable to store headtracking calibration state
+bool gPreviousSceneMode=false;
+bool LastSceneValue=false;
+int CurrentSwipeValue[8]={};
+int CurrentLocation=0;
+int PreviousLocation=0;
 
 bool handshakeReceived;
 
@@ -68,16 +77,22 @@ void on_receive(oscpkt::Message* msg, void*)
 // parse messages received by OSC Server
 void parseMessage(oscpkt::Message* msg){
 
+	//OSC message receipt confirmation
+  //rt_printf("received message to: %s\n", msg->addressPattern().c_str());
 
-  rt_printf("received message to: %s\n", msg->addressPattern().c_str());
-
+	// variables to store OSC input arguments
   int intArg;
   float floatArg;
-	if (msg->match("/two/IO/1/1").popFloat(floatArg).isOkNoMoreArgs()){
-			rt_printf("received SOLO command %f \n", floatArg);
-			if(floatArg==0.0) gSceneMode=false;
-			else gSceneMode=true;
-			rt_printf("Mode is %i \n", gSceneMode);
+
+	// If there is any activity on the swipe area:
+	for(int buttonNo =1; buttonNo<=8; buttonNo++){
+		std::string buttonID=to_string(buttonNo);
+		if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
+				//gCurrentSceneMode=true;									// enable solo mode
+				//LastSceneValue=floatArg;								// store on/off state
+				CurrentSwipeValue[buttonNo-1]=floatArg;			// store button value
+				if(floatArg==1.0) CurrentLocation=buttonNo;	// store button number
+		}
 	}
 
   // Channel-based controls (azimuth, elevation, volume)
@@ -118,11 +133,16 @@ void parseMessage(oscpkt::Message* msg){
       setupIMU(44100);
     }
 	}
-	else if (msg->match("/one/change").popFloat(floatArg).isOkNoMoreArgs()){
-		if(floatArg>0.0){
-	  	changeAudioFiles();
-	  }
-  }
+	else if (msg->match("/two/pause").popFloat(floatArg).isOkNoMoreArgs()){
+		if(floatArg==0.0){
+			rt_printf("received pause command: %f \n", floatArg);
+			pauseAudioFiles();
+		}
+	}
+	else if (msg->match("/two/mainvol").popFloat(floatArg).isOkNoMoreArgs()){
+		rt_printf("received main volume change: %f \n", floatArg);
+		gMainVol=log10(floatArg/140) / log10(140) *-1;
+	}
 
 
   // If in test mode and HRTF comparison index is within range
@@ -143,6 +163,7 @@ void parseMessage(oscpkt::Message* msg){
         gCurrentState=kPlaying;
         gPlayingA=true;
         gPlayingB=false;
+				startTrajectory();
       }
     }
 
@@ -160,6 +181,7 @@ void parseMessage(oscpkt::Message* msg){
         gCurrentState=kPlaying;
         gPlayingA=false;
         gPlayingB=true;
+				startTrajectory();
       }
     }
 
@@ -280,7 +302,7 @@ void parseMessage(oscpkt::Message* msg){
           gInputVolume[0]=0.0;
           gInputVolume[1]=0.9;
           // switch looping on, reset counters and restart audio
-          gLooping=true;
+          //gLooping=true;
           gTimeCounter=0;
           gOSCCounter=0;
           gCurrentState=kPlaying;
@@ -354,7 +376,7 @@ void parseMessage(oscpkt::Message* msg){
 
 int localPort = 7562;
 int remotePort = 7563;
-const char* remoteIp = "192.168.1.2";
+const char* remoteIp = "192.168.1.4";
 int monitorPort = 9001;
 const char* monitorIp = "192.168.1.1";
 
@@ -410,28 +432,35 @@ void checkOSC(){
 
 
   // send curret status by OSC
-  if(++gOSCCounter>=4410){
+  if(++gOSCCounter>=8820){
 
     oscpkt::Message* msg;
   	// read incoming messages from the pipe
+
   	while(oscPipe.readRt(msg) > 0)
   	{
       parseMessage(msg);
-      /*if(msg && msg->match("/osc-test")){
-  			int intArg;
-  			float floatArg;
-  			msg->arg().popInt32(intArg).popFloat(floatArg).isOkNoMoreArgs();
-  			rt_printf("received a message with int %i and float %f\n", intArg, floatArg);
-  			// the call below is not real-time safe, as it may allocate memory. We should not be calling it from here,
-  			// If you see your mode switches (MSW) increase over time, you should really get it out of here.
-  			//oscSender.newMessage("/osc-acknowledge").add(intArg).add(4.2f).add(std::string("OSC message received")).send();
-  		}*/
   		oscPipe.writeRt(msg); // return the pointer to the other thread, where it will be destroyed
   	}
 		sendCurrentStatusOSC();
     oscPipe.setBlockingRt(false);
     gOSCCounter=0;
-    gTimeCounter+=0.1;
+    gTimeCounter+=0.2;
+		if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
+			CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
+			CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
+			CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
+				gCurrentSceneMode=true;
+			}
+		else{
+			gCurrentSceneMode=false;
+		}
+		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
+				if(CurrentLocation>PreviousLocation) rt_printf("ACCEPT \n");
+				if(CurrentLocation<PreviousLocation) rt_printf("REJECT \n");
+		}
+		gPreviousSceneMode=gCurrentSceneMode;
+		PreviousLocation=CurrentLocation;
   }
 }
 

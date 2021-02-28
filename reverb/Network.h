@@ -55,7 +55,17 @@ namespace SDN
 
 		float azimuthFor(Point point);
 
+		//ADDITION:
+		SDN::Point drySources[3];
+		SDN::Delay drySourceToMicDelays[3];
+
 		public:
+
+		//ADDITIONS:
+		float addDrySource(int sampleRate, float x, float y, float z, int sourceIndex); // create drySources point here, create delay line using `Delay::fromDistance`, add to drySourceToMicDelays array
+		void writeToDrySource(float in, int sourceIndex);
+		float readFromDrySource(int sourceIndex);
+
 		SDN::StereoOutput scatterStereo(float input);
 		float scatterMono(float input);
 		SDN::StereoOutput positionSource(float sourceInput);

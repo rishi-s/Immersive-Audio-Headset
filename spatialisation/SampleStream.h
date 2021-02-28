@@ -34,9 +34,9 @@ class SampleStream
 
 public:
 
-    SampleStream(const char* filename, int numChannels, int bufferLength);
+    SampleStream(const char* filename, int numChannels, int bufferLength, bool looping);
     ~SampleStream();
-    int openFile(const char* filename, int numChannels, int bufferLength);
+    int openFile(const char* filename, int numChannels, int bufferLength, bool looping);
     void fillBuffer();
     void processFrame();
     float getSample(int channel);
@@ -84,6 +84,7 @@ private:
 
     //ADDITION: variable to track reaching end of file
     bool gFileEnd;
+    bool gLooping;
 
     int gBusy;
 
