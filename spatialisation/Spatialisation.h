@@ -16,6 +16,9 @@
 extern int gStreams;
 extern bool gHeadTracking;
 extern bool gHeadLocked;
+extern int gTargetState;
+extern int gPlaybackStates[10][3];
+extern void getFocusValues();
 
 // FFT overlap/add buffers and variables
 float gInputBuffer[NUM_STREAMS][BUFFER_SIZE];
@@ -115,11 +118,13 @@ void process_fft()
       signalTimeDomainIn[n].r = 0.0;    // clear the FFT input buffers first
       signalTimeDomainIn[n].i = 0.0;
       // Add the value for each stream, taking into account VBAP speaker gains.
+      // Lookup stream gain based on target state sources.
       if(n<gConvolutionInputSize){
         for(int stream=0; stream<gStreams;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[stream][pointer] \
-          * gVBAPGains[gVBAPUpdatePositions[stream]][speaker] * gWindowBuffer[n];
+          * gVBAPGains[gVBAPUpdatePositions[gPlaybackStates[gTargetState][stream]]] \
+          [speaker] * gWindowBuffer[n];
         }
         // Add the reverb generator output to each virtual loudspeaker
         signalTimeDomainIn[n].r += (ne10_float32_t) \
@@ -215,7 +220,8 @@ void spatialiseAudio(){
       // print for reference
       // rt_printf("Yaw is %f; Pitch is %f; Roll is %f \n", ypr[0],ypr[1],ypr[2]);
 
-      rotateVectors(gStreams);
+      rotateVectors();
+      getFocusValues();
     }
     // .. otherwise use the default locations and lookup that position.
     else {

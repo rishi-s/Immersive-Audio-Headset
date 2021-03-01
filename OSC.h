@@ -23,18 +23,20 @@ extern int gStreams;
 extern int gCurrentState;
 extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
-extern int gVBAPDefaultAzimuth[NUM_STREAMS];
-extern int gVBAPDefaultElevation[NUM_STREAMS];
-extern int gVBAPUpdateAzimuth[NUM_STREAMS];
-extern int gVBAPUpdateElevation[NUM_STREAMS];
+extern int gVBAPDefaultAzimuth[NUM_VBAP_TRACKS];
+extern int gVBAPDefaultElevation[NUM_VBAP_TRACKS];
+extern int gVBAPUpdateAzimuth[NUM_VBAP_TRACKS];
+extern int gVBAPUpdateElevation[NUM_VBAP_TRACKS];
 extern bool gHeardAState;
 extern bool gHeardBState;
 //extern bool gLooping;
 extern float gMainVol;
 extern bool setupIMU(int sampleRate);
-extern void changeAudioFiles();
 extern void pauseAudioFiles();
 extern void startTrajectory();
+extern void changeAudioFiles(int oldTrack, int newTrack);
+
+extern int gTargetSong;
 
 int gOSCCounter=0;
 float gTimeCounter=0;
@@ -57,6 +59,7 @@ int PreviousLocation=0;
 bool handshakeReceived;
 
 void sendCurrentStatusOSC();
+
 
 // monitor messages received by OSC Server
 void on_receive(oscpkt::Message* msg, void*)
@@ -92,6 +95,25 @@ void parseMessage(oscpkt::Message* msg){
 				//LastSceneValue=floatArg;								// store on/off state
 				CurrentSwipeValue[buttonNo-1]=floatArg;			// store button value
 				if(floatArg==1.0) CurrentLocation=buttonNo;	// store button number
+				// Check for touch pad interaction
+				if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
+					CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
+					CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
+					CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
+						gCurrentSceneMode=true;
+					}
+				else{
+					gCurrentSceneMode=false;
+				}
+				if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
+	      	changeAudioFiles(5,gTargetSong+5);
+				}
+				if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
+					if(CurrentLocation>PreviousLocation) rt_printf("ACCEPT \n");
+					if(CurrentLocation<PreviousLocation) rt_printf("REJECT \n");
+				}
+				gPreviousSceneMode=gCurrentSceneMode;
+				PreviousLocation=CurrentLocation;
 		}
 	}
 
@@ -446,21 +468,6 @@ void checkOSC(){
     oscPipe.setBlockingRt(false);
     gOSCCounter=0;
     gTimeCounter+=0.2;
-		if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
-			CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
-			CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
-			CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
-				gCurrentSceneMode=true;
-			}
-		else{
-			gCurrentSceneMode=false;
-		}
-		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
-				if(CurrentLocation>PreviousLocation) rt_printf("ACCEPT \n");
-				if(CurrentLocation<PreviousLocation) rt_printf("REJECT \n");
-		}
-		gPreviousSceneMode=gCurrentSceneMode;
-		PreviousLocation=CurrentLocation;
   }
 }
 

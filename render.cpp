@@ -61,7 +61,7 @@ bool setup(BelaContext *context, void *userData)
   prepFFTBuffers();                             // set up FFT
   transformHRIRs(gHRIRLength, gConvolutionSize);// convert HRIRs to Hz domain
   getVBAPMatrix();                              // import VBAP speaker gains
-  createVectors(gStreams);                      // create starting vectors
+  createVectors();                      // create starting vectors
   setupOSC();                                   // setup OSC communication
   initFocusScene();                             // calculate focus gain values
   if(gFixedTrajectory)setupLocalisationTests();
@@ -113,23 +113,22 @@ void render(BelaContext *context, void *userData){
       //use a defined test routine for verifying HRTF convolution outputs
       if(gTestMode)applyTestCoords();
 
-      // check headtracking state and update state machine
-      getFocusValues();
-
       // instantiate and initialise reverb send variable
       float reverbInput=0.0;
 
       // INPUTS TO REVERB SYSTEM:
       // process and read frames for each sampleStream object into input buffers
       for(int stream=0; stream<gStreams; stream++){
-        sampleStream[stream]->togglePlayback(1);
-        sampleStream[stream]->processFrame();
+        //sampleStream[gPlaybackStates[gTargetState][stream]]->togglePlayback(1);
+        sampleStream[gPlaybackStates[gTargetState][stream]]->processFrame();
         // process stream for distance attenuation
         reverb->writeToDrySource(\
-          sampleStream[stream]->getSample(0) * gInputVolume[stream],stream);
+          sampleStream[gPlaybackStates[gTargetState][stream]]->getSample(0) \
+          * gInputVolume[gPlaybackStates[gTargetState][stream]],stream);
         // feed 0.3 of stream to reverb generator
-        reverbInput += sampleStream[stream]->getSample(0) \
-          * gInputVolume[stream];
+        reverbInput += sampleStream[gPlaybackStates[gTargetState][stream]] \
+          ->getSample(0) * gInputVolume[gPlaybackStates[gTargetState][stream]] \
+          * 0.3;
         // add stream with distance attenuation to input buffer
         gInputBuffer[stream][gInputBufferPointer] = \
           reverb->readFromDrySource(stream);
@@ -186,21 +185,20 @@ void createEnvironment(int sampleRate){
   }
 }
 
-// function to prepare audio streams for playback
+// function to prepare audio files for playback
 void loadAudioFiles(){
-  // load a playback .wav file into each stream buffer
-  for(int stream=0;stream<gStreams;stream++) {
-    std::string number=to_string(stream+1);
+  // load a playback .wav file into each buffer
+  for(int track=0; track<NUM_VBAP_TRACKS; track++) {
+    std::string number=to_string(track+1);
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
-    if(stream==4) {
-      sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
+    if(track<=4) {
+      sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
     }
     else {
-      sampleStream[stream] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
+      sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
     }
-
-    gInputVolume[stream]=1.0;
+    gInputVolume[track]=1.0;
   }
 }
 
@@ -215,35 +213,36 @@ void setupLocalisationTests() {
   sampleStream[0]->openFile(trajectoryStim,NUM_CHANNELS,BUFFER_SIZE,false);
   sampleStream[1]->openFile(sourceStim,NUM_CHANNELS,BUFFER_SIZE,true);
   // mute all other streams
-  for(int stream=1;stream<gStreams;stream++) gInputVolume[stream]=0.0;                         // mute second stream
+  for(int stream=1; stream<NUM_STREAMS; stream++) gInputVolume[stream]=0.0;                         // mute second stream
 }
 
-// function to change audio streams during playback
-void changeAudioFiles(){
+// function to change audio files during playback
+void changeAudioFiles(int oldTrack, int newTrack){
     // stop the current track and delete the playback object
-    sampleStream[4]->stopPlaying();
+    sampleStream[oldTrack]->stopPlaying();
     // create a new playback object and load the replacement .wav file
-    std::string file= "./tracks/track6.wav";
+    std::string number=to_string(newTrack+1);
+    std::string file = "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
-    sampleStream[4]->openFile(id,NUM_CHANNELS,BUFFER_SIZE,true);
+    sampleStream[oldTrack]->openFile(id,NUM_CHANNELS,BUFFER_SIZE,false);
 }
 
-// function to pause all audio streams during playback
+// function to pause all audio files during playback
 void pauseAudioFiles(){
-    // pause all streams
-    for(int stream=0;stream<gStreams;stream++){
-      sampleStream[stream]->togglePlaybackWithFade(1.0);
+    // pause all files
+    for(int track=0; track<NUM_VBAP_TRACKS; track++){
+      sampleStream[track]->togglePlaybackWithFade(1.0);
     }
 }
 
 void startTrajectory(){
-  // start test trajectory stream
+  // start test trajectory track
     sampleStream[0]->togglePlayback(1);
 }
 
 void reinitialiseAudioStreams(){
-  // stop all streams and set to refill input buffers
-  for(int stream=0; stream<gStreams; stream++){
+  // stop all tracks and set to refill input buffers
+  for(int stream=0; stream<NUM_STREAMS; stream++){
     sampleStream[stream]->stopPlaying();
   }
   Bela_scheduleAuxiliaryTask(gFillBuffersTask);
@@ -271,9 +270,9 @@ void reinitialiseAudioStreams(){
 
 // function to fill buffers for specified number of streams on startup
 void fillBuffers(void*) {
-  for(int stream=0;stream<gStreams;stream++) {
-    if(sampleStream[stream]->bufferNeedsFilled())
-    sampleStream[stream]->fillBuffer();
+  for(int track=0; track<NUM_VBAP_TRACKS; track++) {
+    if(sampleStream[track]->bufferNeedsFilled())
+    sampleStream[track]->fillBuffer();
   }
 }
 
@@ -290,7 +289,7 @@ void applyTestCoords(){
 void cleanup(BelaContext *context, void *userData)
 {
   // clear all input buffers
-  for(int i=0;i<gStreams;i++) {
+  for(int i=0;i<NUM_STREAMS;i++) {
     delete sampleStream[i];
   }
   // clear impulses

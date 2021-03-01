@@ -8,8 +8,8 @@
 
 
 // variables referenced from main render.cpp
-extern int gVBAPDefaultAzimuth[NUM_STREAMS];
-extern int gVBAPDefaultElevation[NUM_STREAMS];
+extern int gVBAPDefaultAzimuth[NUM_VBAP_TRACKS];
+extern int gVBAPDefaultElevation[NUM_VBAP_TRACKS];
 extern int gHopSize;
 
 // trajectory variables
