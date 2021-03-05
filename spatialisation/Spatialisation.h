@@ -13,7 +13,6 @@
 
 
 // user controlled variables from main.cpp
-extern int gStreams;
 extern bool gHeadTracking;
 extern bool gHeadLocked;
 extern int gTargetState;
@@ -120,7 +119,7 @@ void process_fft()
       // Add the value for each stream, taking into account VBAP speaker gains.
       // Lookup stream gain based on target state sources.
       if(n<gConvolutionInputSize){
-        for(int stream=0; stream<gStreams;stream++){
+        for(int stream=0; stream<NUM_SIM_3D_STREAMS;stream++){
           signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[stream][pointer] \
           * gVBAPGains[gVBAPUpdatePositions[gPlaybackStates[gTargetState][stream]]] \
@@ -129,6 +128,10 @@ void process_fft()
         // Add the reverb generator output to each virtual loudspeaker
         signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[NUM_STREAMS-1][pointer] * gWindowBuffer[n];
+        /*signalTimeDomainIn[n].r += (ne10_float32_t) \
+            gInputBuffer[6][pointer] * gWindowBuffer[n];
+        signalTimeDomainIn[n].r += (ne10_float32_t) \
+            gInputBuffer[7][pointer] * gWindowBuffer[n];*/
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
         pointer++;
@@ -168,11 +171,17 @@ void process_fft()
     cfg, 1);
   ne10_fft_c2c_1d_float32_neon (signalTimeDomainOutR, signalFrequencyDomainR, \
       cfg, 1);
-  // add results to left and output buffers
+  // add results to left and right output buffers
   pointer = gFFTOutputBufferPointer;
   for(int n=0; n<gConvolutionSize; n++) {
+    //add spatialised signals
     gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
     gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
+    //add dry signals
+    for(int m=NUM_VBAP_TRACKS;m<NUM_STREAMS-1;m++){
+      gOutputBufferL[pointer] += gInputBuffer[m][pointer];
+      gOutputBufferR[pointer] += gInputBuffer[m][pointer];
+    }
     pointer++;
     if(pointer >= BUFFER_SIZE)
     pointer = 0;
@@ -225,7 +234,7 @@ void spatialiseAudio(){
     }
     // .. otherwise use the default locations and lookup that position.
     else {
-      for (int i = 0; i < gStreams; i++){
+      for (int i = 0; i < NUM_SIM_3D_STREAMS; i++){
         gVBAPUpdatePositions[i]=((gVBAPDefaultElevation[i]+90)*361) \
           +gVBAPDefaultAzimuth[i]+180;
       }

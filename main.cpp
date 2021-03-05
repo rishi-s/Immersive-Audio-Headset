@@ -15,7 +15,7 @@
 
 using namespace std;
 
-int gStreams=3;				// global variable for number of streams (<=12)
+//int gStreams=3;				// global variable for number of streams (<=12)
 bool gHeadTracking=1;		// global variable for headtracking (off or on)
 bool gFixedTrajectory=0;// global variable for fixed trajectory (off or on)
 bool gTestMode=0;				// global variable for rendering test mode (off or on)
@@ -68,14 +68,14 @@ int main(int argc, char *argv[])
 		case 'h':
 				usage(basename(argv[0]));
 				exit(0);
-    case 's':
+    /*case 's':
 				// read streams argument and force within required values
     		gStreams=atoi(optarg);
 				if(gStreams<1)
 				gStreams=1;
 				if(gStreams>12)
 				gStreams=12;
-    		break;
+    		break;*/
 		case 't':
 				// read head tracking argument
 				gHeadTracking=atoi(optarg);

@@ -19,24 +19,25 @@
 #include "spatialisation/ABRoutine.h"          // HRTF comparison trial structure
 
 
-extern int gStreams;
 extern int gCurrentState;
 extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
-extern int gVBAPDefaultAzimuth[NUM_VBAP_TRACKS];
-extern int gVBAPDefaultElevation[NUM_VBAP_TRACKS];
+extern int gVBAPDefaultAzimuth[NUM_FIXED_POSITIONS];
+extern int gVBAPDefaultElevation[NUM_FIXED_POSITIONS];
+extern float gVBAPDefaultVector[NUM_FIXED_POSITIONS][3];
+extern float gVBAPActiveVector[NUM_VBAP_TRACKS][3];
 extern int gVBAPUpdateAzimuth[NUM_VBAP_TRACKS];
 extern int gVBAPUpdateElevation[NUM_VBAP_TRACKS];
 extern bool gHeardAState;
 extern bool gHeardBState;
-//extern bool gLooping;
 extern float gMainVol;
 extern bool setupIMU(int sampleRate);
 extern void pauseAudioFiles();
-extern void startTrajectory();
+extern void startPlayback(int stream);
 extern void changeAudioFiles(int oldTrack, int newTrack);
 
-extern int gTargetSong;
+extern int gCurrentTargetSong;
+extern int gTargetState;
 
 int gOSCCounter=0;
 float gTimeCounter=0;
@@ -87,38 +88,17 @@ void parseMessage(oscpkt::Message* msg){
   int intArg;
   float floatArg;
 
-	// If there is any activity on the swipe area:
+	// if there is any activity on the swipe area:
 	for(int buttonNo =1; buttonNo<=8; buttonNo++){
 		std::string buttonID=to_string(buttonNo);
 		if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
-				//gCurrentSceneMode=true;									// enable solo mode
-				//LastSceneValue=floatArg;								// store on/off state
 				CurrentSwipeValue[buttonNo-1]=floatArg;			// store button value
 				if(floatArg==1.0) CurrentLocation=buttonNo;	// store button number
-				// Check for touch pad interaction
-				if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
-					CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
-					CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
-					CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
-						gCurrentSceneMode=true;
-					}
-				else{
-					gCurrentSceneMode=false;
-				}
-				if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
-	      	changeAudioFiles(5,gTargetSong+5);
-				}
-				if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
-					if(CurrentLocation>PreviousLocation) rt_printf("ACCEPT \n");
-					if(CurrentLocation<PreviousLocation) rt_printf("REJECT \n");
-				}
-				gPreviousSceneMode=gCurrentSceneMode;
-				PreviousLocation=CurrentLocation;
 		}
 	}
 
   // Channel-based controls (azimuth, elevation, volume)
-  for(unsigned int stream=0; stream<gStreams; stream++){
+  for(unsigned int stream=0; stream<NUM_SIM_3D_STREAMS; stream++){
     std::string number=to_string(stream);
     if (msg->match("/one/azimuth"+number).popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received azimuth command %i \n", intArg);
@@ -185,7 +165,7 @@ void parseMessage(oscpkt::Message* msg){
         gCurrentState=kPlaying;
         gPlayingA=true;
         gPlayingB=false;
-				startTrajectory();
+				startPlayback(0);
       }
     }
 
@@ -203,7 +183,7 @@ void parseMessage(oscpkt::Message* msg){
         gCurrentState=kPlaying;
         gPlayingA=false;
         gPlayingB=true;
-				startTrajectory();
+				startPlayback(0);
       }
     }
 
@@ -458,6 +438,62 @@ void checkOSC(){
 
     oscpkt::Message* msg;
   	// read incoming messages from the pipe
+
+		// if the touch pad is being held, enable solo mode
+		if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
+			CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
+			CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
+			CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
+				gCurrentSceneMode=true;
+			}
+		// otherwise set to concurrent mode
+		else{
+			gCurrentSceneMode=false;
+		}
+		// if solo mode has just been enabled
+		if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
+
+			// load the corresponding voiceover file
+			changeAudioFiles(5,gCurrentTargetSong+5);
+			// switch to the corresponding target song state
+			gTargetState=gCurrentTargetSong+5;
+			// update the default location for the voiceover
+			for(int i=0;i<3;i++){
+				gVBAPActiveVector[5][i]=gVBAPDefaultVector[gCurrentTargetSong+5][i];
+			}
+			for(int song=0; song<5; song++){
+				int position=0;
+				// (treat all positions as positive)
+				if(gVBAPUpdateAzimuth[song]<0) {
+					position = gVBAPUpdateAzimuth[song]*-1;
+				}
+				else {
+					position = gVBAPUpdateAzimuth[song];
+				}
+				gInputVolume[song]=0.0;
+				if(position<=18) {
+					gInputVolume[song]=1.0;
+					// update the default location for the voiceover
+				}
+			}
+		}
+		// if touch pad has just been released
+		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
+			// check for an accept gesture
+			if(CurrentLocation>PreviousLocation) {
+				rt_printf("ACCEPT \n");
+				startPlayback(7);
+
+			}
+			// check for a reject getsture
+			if(CurrentLocation<PreviousLocation) {
+				rt_printf("REJECT \n");
+				startPlayback(8);
+			}
+		}
+		// update scene modes and locations
+		gPreviousSceneMode=gCurrentSceneMode;
+		PreviousLocation=CurrentLocation;
 
   	while(oscPipe.readRt(msg) > 0)
   	{

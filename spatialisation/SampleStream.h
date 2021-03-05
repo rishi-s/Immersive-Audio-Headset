@@ -16,7 +16,6 @@
 #include "SpatialSceneParams.h"  // definition of audio sources and context
 
 
-extern int gStreams;
 extern int gCurrentState;
 extern bool gFixedTrajectory;
 

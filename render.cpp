@@ -22,7 +22,6 @@
 SDN::Network *reverb;
 
 // user controlled variables from main.cpp
-extern int gStreams;
 extern bool gFixedTrajectory;
 extern bool gTestMode;
 
@@ -118,8 +117,7 @@ void render(BelaContext *context, void *userData){
 
       // INPUTS TO REVERB SYSTEM:
       // process and read frames for each sampleStream object into input buffers
-      for(int stream=0; stream<gStreams; stream++){
-        //sampleStream[gPlaybackStates[gTargetState][stream]]->togglePlayback(1);
+      for(int stream=0; stream<NUM_SIM_3D_STREAMS; stream++){
         sampleStream[gPlaybackStates[gTargetState][stream]]->processFrame();
         // process stream for distance attenuation
         reverb->writeToDrySource(\
@@ -133,10 +131,17 @@ void render(BelaContext *context, void *userData){
         gInputBuffer[stream][gInputBufferPointer] = \
           reverb->readFromDrySource(stream);
       }
+      for(int notifs=NUM_VBAP_TRACKS; notifs<NUM_STREAMS-1; notifs++){
+        sampleStream[notifs]->processFrame();
+        gInputBuffer[notifs][gInputBufferPointer] = \
+          sampleStream[notifs]->getSample(0);
+      }
+
       //REVERB RETURN: Output from reverberator must be sent to spatialisation
       // add reverb output to spare stream
       gInputBuffer[NUM_STREAMS-1][gInputBufferPointer] =  \
         reverb->scatterMono(reverbInput);
+
 
       // OUTPUT SUMMING: Spatialised VBAP signals are summed here
       // copy output buffer L/R to audio output L/R
@@ -171,7 +176,7 @@ void createEnvironment(int sampleRate){
   reverb->setSourcePosition(latCentre, longCentre + hrtfDepth, earLevel);
   reverb->setMicPosition(latCentre, longCentre, earLevel);
   // assign positions of source signals within virtual environment
-  for(int stream=0;stream<gStreams;stream++){
+  for(int stream=0;stream<NUM_SIM_3D_STREAMS;stream++){
     sourceDepth = hrtfDepth*cos(gVBAPDefaultElevation[stream]*M_PI/180.0);
     sourceLat = sourceDepth*sin(gVBAPDefaultAzimuth[stream]*M_PI/180.0);
     sourceLong = sourceDepth*cos(gVBAPDefaultAzimuth[stream]*M_PI/180.0);
@@ -200,6 +205,13 @@ void loadAudioFiles(){
     }
     gInputVolume[track]=1.0;
   }
+  for(int sfx=NUM_VBAP_TRACKS; sfx<NUM_STREAMS-1; sfx++) {
+    std::string number=to_string(sfx-5);
+    std::string file= "./sfx/sfx" + number + ".wav";
+    const char * id = file.c_str();
+    sampleStream[sfx] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
+    gInputVolume[sfx]=0.4;
+  }
 }
 
 // function to setup localisation tests
@@ -219,25 +231,27 @@ void setupLocalisationTests() {
 // function to change audio files during playback
 void changeAudioFiles(int oldTrack, int newTrack){
     // stop the current track and delete the playback object
+    sampleStream[oldTrack]->togglePlaybackWithFade(0,0.2);
     sampleStream[oldTrack]->stopPlaying();
     // create a new playback object and load the replacement .wav file
     std::string number=to_string(newTrack+1);
     std::string file = "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[oldTrack]->openFile(id,NUM_CHANNELS,BUFFER_SIZE,false);
+    sampleStream[oldTrack]->togglePlayback(1);
 }
 
 // function to pause all audio files during playback
 void pauseAudioFiles(){
     // pause all files
     for(int track=0; track<NUM_VBAP_TRACKS; track++){
-      sampleStream[track]->togglePlaybackWithFade(1.0);
+      sampleStream[track]->togglePlaybackWithFade(0.2);
     }
 }
 
-void startTrajectory(){
+void startPlayback(int stream){
   // start test trajectory track
-    sampleStream[0]->togglePlayback(1);
+    sampleStream[stream]->togglePlayback(1);
 }
 
 void reinitialiseAudioStreams(){
@@ -270,7 +284,7 @@ void reinitialiseAudioStreams(){
 
 // function to fill buffers for specified number of streams on startup
 void fillBuffers(void*) {
-  for(int track=0; track<NUM_VBAP_TRACKS; track++) {
+  for(int track=0; track<NUM_STREAMS-1; track++) {
     if(sampleStream[track]->bufferNeedsFilled())
     sampleStream[track]->fillBuffer();
   }

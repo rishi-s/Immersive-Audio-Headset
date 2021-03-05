@@ -11,14 +11,14 @@
 
 
 // ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[NUM_VBAP_TRACKS]={-74,-37,0,37,74,0};
+int gVBAPDefaultAzimuth[NUM_FIXED_POSITIONS]={-74,-37,0,37,74,-74,-37,0,37,74};
 
 // ADD ELEVATIONS HERE: -90 (down) to 90 (up)
-int gVBAPDefaultElevation[NUM_VBAP_TRACKS]={0,0,0,0,0,30};
+int gVBAPDefaultElevation[NUM_FIXED_POSITIONS]={0,0,0,0,0,30,30,30,30,30};
 
 //Rotation variables
-float gVBAPDefaultVector[NUM_VBAP_TRACKS][3];
-float gVBAPRotatedVector[NUM_VBAP_TRACKS][3];
+float gVBAPDefaultVector[NUM_FIXED_POSITIONS][3];
+float gVBAPActiveVector[NUM_VBAP_TRACKS][3];
 int gVBAPUpdatePositions[NUM_VBAP_TRACKS]={0};
 int gVBAPUpdateAzimuth[NUM_VBAP_TRACKS]={0};
 int gVBAPUpdateElevation[NUM_VBAP_TRACKS]={0};
@@ -29,14 +29,19 @@ float kRadToDeg=180/M_PI;
 
 // function to convert input stream point source locations to 3D vectors
 void createVectors(){
-  for(int track=0; track<NUM_VBAP_TRACKS; track++){
+  for(int point=0; point<NUM_FIXED_POSITIONS; point++){
     // convert default azi and ele to radians
-    float aziRad=gVBAPDefaultAzimuth[track]*kDegToRad;
-    float eleRad=gVBAPDefaultElevation[track]*kDegToRad;
+    float aziRad=gVBAPDefaultAzimuth[point]*kDegToRad;
+    float eleRad=gVBAPDefaultElevation[point]*kDegToRad;
     // convert co-ordinates to 3D vector values
-    gVBAPDefaultVector[track][0]=cos(eleRad)*cos(aziRad);
-    gVBAPDefaultVector[track][1]=cos(eleRad)*sin(aziRad);
-    gVBAPDefaultVector[track][2]=sin(eleRad);
+    gVBAPDefaultVector[point][0]=cos(eleRad)*cos(aziRad);
+    gVBAPDefaultVector[point][1]=cos(eleRad)*sin(aziRad);
+    gVBAPDefaultVector[point][2]=sin(eleRad);
+ }
+ for(int track=0; track<NUM_VBAP_TRACKS; track++){
+   for(int i=0; i<3; i++){
+     gVBAPActiveVector[track][i]=gVBAPDefaultVector[track][i];
+   }
  }
 }
 
@@ -57,9 +62,9 @@ void rotateVectors(){
   float rollCos = cos(ypr[2]);
   for(int track=0; track<NUM_VBAP_TRACKS; track++){
     //apply yaw rotation to source 3D vector locations
-    yawRot[0] = yawCos*gVBAPDefaultVector[track][0] + -yawSin*gVBAPDefaultVector[track][1];
-    yawRot[1] = yawSin*gVBAPDefaultVector[track][0] + yawCos*gVBAPDefaultVector[track][1];
-    yawRot[2] = gVBAPDefaultVector[track][2];
+    yawRot[0] = yawCos*gVBAPActiveVector[track][0] + -yawSin*gVBAPActiveVector[track][1];
+    yawRot[1] = yawSin*gVBAPActiveVector[track][0] + yawCos*gVBAPActiveVector[track][1];
+    yawRot[2] = gVBAPActiveVector[track][2];
     //apply pitch rotation to yaw rotated locations
     pitchRot[0] = pitchCos*yawRot[0] + pitchSin*yawRot[2];
     pitchRot[1] = yawRot[1];
