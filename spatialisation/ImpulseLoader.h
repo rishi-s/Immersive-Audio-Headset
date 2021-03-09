@@ -131,12 +131,12 @@ void loadImpulse(int impulseLength){
         getImpulseSamples(id,gImpulseData[impulseChannel].samples,ch,0, \
           gImpulseData[impulseChannel].sampleLen);
         //check buffer lengths and start/end values during setup
-        rt_printf("Length %d = %d\n",impulseChannel, \
+        /*rt_printf("Length %d = %d\n",impulseChannel, \
           gImpulseData[impulseChannel].sampleLen);
         rt_printf("Impulse %d = %f\n",impulseChannel, \
           gImpulseData[impulseChannel].samples[0]);
         rt_printf("Impulse %d = %f\n",impulseChannel, \
-          gImpulseData[impulseChannel].samples[impulseLength-1]);
+          gImpulseData[impulseChannel].samples[impulseLength-1]);*/
       }
     }
   }

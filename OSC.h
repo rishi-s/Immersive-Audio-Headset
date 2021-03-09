@@ -19,47 +19,63 @@
 #include "spatialisation/ABRoutine.h"          // HRTF comparison trial structure
 
 
-extern int gCurrentState;
-extern bool gHeadLocked;
-extern float gInputVolume[NUM_STREAMS];
+//variables from VectorRotations.h
 extern int gVBAPDefaultAzimuth[NUM_FIXED_POSITIONS];
 extern int gVBAPDefaultElevation[NUM_FIXED_POSITIONS];
 extern float gVBAPDefaultVector[NUM_FIXED_POSITIONS][3];
 extern float gVBAPActiveVector[NUM_VBAP_TRACKS][3];
 extern int gVBAPUpdateAzimuth[NUM_VBAP_TRACKS];
 extern int gVBAPUpdateElevation[NUM_VBAP_TRACKS];
-extern bool gHeardAState;
-extern bool gHeardBState;
+
+
+// variables from render.cpp
+extern bool gFixedTrajectory;
+
+// variables from render.cpp
+extern int gPlaybackState;
+extern bool gHeadLocked;
+extern float gInputVolume[NUM_STREAMS];
 extern float gMainVol;
 extern bool setupIMU(int sampleRate);
-extern void pauseAudioFiles();
-extern void startPlayback(int stream);
 extern void changeAudioFiles(int oldTrack, int newTrack);
+extern void pauseAllMusic(float fade);
+extern void resumeAllMusic(float fade);
+extern void pausePlayback(int stream);
+extern void resumePlayback(int stream);
+extern void startPlayback(int stream);
 
+// variables from SpatialFocus.cpp
 extern int gCurrentTargetSong;
 extern int gTargetState;
 
-int gOSCCounter=0;
-float gTimeCounter=0;
-
+// OSC initialisation and communication handling
 Pipe oscPipe;
-
 OscReceiver oscServer;
 OscSender oscClient;
 OscSender oscMonitor;
+bool handshakeReceived;
+void sendCurrentStatusOSC();
 
-int gHRTF=0;		    // global variable to store HRTF set for binauralisation
-bool gCalibrate=0;  // global variable to store headtracking calibration state
-bool gCurrentSceneMode=false;	// global variable to store headtracking calibration state
-bool gPreviousSceneMode=false;
-bool LastSceneValue=false;
-int CurrentSwipeValue[8]={};
+// AB comparison states
+bool gHeardAState = false;			// has example A been heard in entirety
+bool gHeardBState = false;			// has example B been heard in entirety
+
+// head-tracker interfacing
+int gHRTF=0;		    						// HRTF set for binauralisation
+bool gCalibrate=0;  						// headtracking calibration state
+
+
+bool gCurrentSceneMode=false;		// current solo/concurrent stream mode
+bool gPreviousSceneMode=false;	// previous solo/concurrent stream mode
+bool gSceneModeChange=false;		// stream mode transition status
+int CurrentSwipeValue[16]={};		//
 int CurrentLocation=0;
 int PreviousLocation=0;
 
-bool handshakeReceived;
 
-void sendCurrentStatusOSC();
+
+int gOSCCounter=0;							// counter for OSC check interval
+float gTimeCounter=0;						// counter for time event logging
 
 
 // monitor messages received by OSC Server
@@ -89,11 +105,12 @@ void parseMessage(oscpkt::Message* msg){
   float floatArg;
 
 	// if there is any activity on the swipe area:
-	for(int buttonNo =1; buttonNo<=8; buttonNo++){
+	for(int buttonNo=1; buttonNo<=16; buttonNo++){
 		std::string buttonID=to_string(buttonNo);
 		if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
 				CurrentSwipeValue[buttonNo-1]=floatArg;			// store button value
-				if(floatArg==1.0) CurrentLocation=buttonNo;	// store button number
+				if(floatArg==1.0)	CurrentLocation=buttonNo;	// store button number
+				rt_printf("received mode command %i, %f \n", buttonNo, floatArg);
 		}
 	}
 
@@ -109,7 +126,6 @@ void parseMessage(oscpkt::Message* msg){
       rt_printf("received elevation command %i \n", intArg);
       gVBAPDefaultElevation[stream]=intArg;
       rt_printf("Source elevation is %i \n", gVBAPDefaultElevation[stream]);
-      gCurrentState=kPlaying;
     }
     else if (msg->match("/one/volume"+number).popFloat(floatArg).isOkNoMoreArgs()){
       rt_printf("received volume command %f \n", floatArg);
@@ -118,7 +134,7 @@ void parseMessage(oscpkt::Message* msg){
     }
   }
 
-  //Global controls (HRTF, head-tracker calibration, IMU reinitialisation)
+  //Global controls (HRTF, head-tracker calibration, IMU reinit, pause, mainVol)
   if (msg->match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received calibrate command %i \n", intArg);
       gCalibrate=intArg;
@@ -127,7 +143,7 @@ void parseMessage(oscpkt::Message* msg){
   else if (msg->match("/one/hrtf").popInt32(intArg).isOkNoMoreArgs()){
       rt_printf("received HRTF command %i \n", intArg);
       gHRTF=intArg;
-      gCurrentState=kStopped;
+      gPlaybackState=kStopped;
       rt_printf("HRTF is %i \n", gHRTF);
   }
   else if (msg->match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
@@ -138,7 +154,7 @@ void parseMessage(oscpkt::Message* msg){
 	else if (msg->match("/two/pause").popFloat(floatArg).isOkNoMoreArgs()){
 		if(floatArg==0.0){
 			rt_printf("received pause command: %f \n", floatArg);
-			pauseAudioFiles();
+			pauseAllMusic(2.0);
 		}
 	}
 	else if (msg->match("/two/mainvol").popFloat(floatArg).isOkNoMoreArgs()){
@@ -157,12 +173,12 @@ void parseMessage(oscpkt::Message* msg){
         gPlaybackText="";
         gPlayingA=false;
         gPlayingB=false;
-        gCurrentState=kStopped;
+        gPlaybackState=kStopped;
         gHRTF=gComparMatches[gComparIndex][0];
       }
       if(floatArg==0.0){
         gPlaybackText="PLAYING A";
-        gCurrentState=kPlaying;
+        gPlaybackState=kPlaying;
         gPlayingA=true;
         gPlayingB=false;
 				startPlayback(0);
@@ -175,12 +191,12 @@ void parseMessage(oscpkt::Message* msg){
         gPlaybackText="";
         gPlayingA=false;
         gPlayingB=false;
-        gCurrentState=kStopped;
+        gPlaybackState=kStopped;
         gHRTF=gComparMatches[gComparIndex][1];
       }
       if(floatArg==0.0){
         gPlaybackText="PLAYING B";
-        gCurrentState=kPlaying;
+        gPlaybackState=kPlaying;
         gPlayingA=false;
         gPlayingB=true;
 				startPlayback(0);
@@ -264,7 +280,7 @@ void parseMessage(oscpkt::Message* msg){
             setupIMU(44100);
           }
           gChoiceState=kNoneSelected;
-          gCurrentState=kStopped;
+          gPlaybackState=kStopped;
         }
       }
     }
@@ -303,11 +319,10 @@ void parseMessage(oscpkt::Message* msg){
           // silence HRTF audio and raise Location trial
           gInputVolume[0]=0.0;
           gInputVolume[1]=0.9;
-          // switch looping on, reset counters and restart audio
-          //gLooping=true;
+          // reset counters and restart audio
           gTimeCounter=0;
           gOSCCounter=0;
-          gCurrentState=kPlaying;
+          gPlaybackState=kPlaying;
         }
       }
     }
@@ -322,7 +337,7 @@ void parseMessage(oscpkt::Message* msg){
           gLocalisationResponses[gLocationIndex][1]=gVBAPUpdateElevation[1];
           gLocalisationResponseTimes[gLocationIndex]=gTimeCounter;
           // then stop audio.
-          gCurrentState=kStopped;
+          gPlaybackState=kStopped;
         }
         // When button is released ...
         if(floatArg==0.0){
@@ -331,7 +346,7 @@ void parseMessage(oscpkt::Message* msg){
           gVBAPDefaultAzimuth[1]=gLocationTrials[gLocationIndex][0];
           gVBAPDefaultElevation[1]=gLocationTrials[gLocationIndex][1];
           // then restart audio and counters.
-          gCurrentState=kPlaying;
+          gPlaybackState=kPlaying;
           gTimeCounter=0;
           gOSCCounter=0;
           // If an example task, just change the text ...
@@ -367,12 +382,11 @@ void parseMessage(oscpkt::Message* msg){
           else {
             gLocationText="END";
             writeLocationResponses();
-            gCurrentState=kStopped;
+            gPlaybackState=kStopped;
           }
         }
       }
     }
-
   }
 }
 
@@ -426,7 +440,6 @@ bool setupOSC(){
     oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
     oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
 
-
 	return true;
 }
 
@@ -434,77 +447,80 @@ void checkOSC(){
 
 
   // send curret status by OSC
-  if(++gOSCCounter>=8820){
+  if(++gOSCCounter>=4410){
 
     oscpkt::Message* msg;
   	// read incoming messages from the pipe
-
-		// if the touch pad is being held, enable solo mode
-		if(CurrentSwipeValue[0]==1 || CurrentSwipeValue[1]==1 || \
-			CurrentSwipeValue[2]==1 || CurrentSwipeValue[3]==1 || \
-			CurrentSwipeValue[4]==1 || CurrentSwipeValue[5]==1 || \
-			CurrentSwipeValue[6]==1 || CurrentSwipeValue[7]==1){
-				gCurrentSceneMode=true;
-			}
-		// otherwise set to concurrent mode
-		else{
-			gCurrentSceneMode=false;
-		}
-		// if solo mode has just been enabled
-		if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
-
-			// load the corresponding voiceover file
-			changeAudioFiles(5,gCurrentTargetSong+5);
-			// switch to the corresponding target song state
-			gTargetState=gCurrentTargetSong+5;
-			// update the default location for the voiceover
-			for(int i=0;i<3;i++){
-				gVBAPActiveVector[5][i]=gVBAPDefaultVector[gCurrentTargetSong+5][i];
-			}
-			for(int song=0; song<5; song++){
-				int position=0;
-				// (treat all positions as positive)
-				if(gVBAPUpdateAzimuth[song]<0) {
-					position = gVBAPUpdateAzimuth[song]*-1;
-				}
-				else {
-					position = gVBAPUpdateAzimuth[song];
-				}
-				gInputVolume[song]=0.0;
-				if(position<=18) {
-					gInputVolume[song]=1.0;
-					// update the default location for the voiceover
-				}
-			}
-		}
-		// if touch pad has just been released
-		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
-			// check for an accept gesture
-			if(CurrentLocation>PreviousLocation) {
-				rt_printf("ACCEPT \n");
-				startPlayback(7);
-
-			}
-			// check for a reject getsture
-			if(CurrentLocation<PreviousLocation) {
-				rt_printf("REJECT \n");
-				startPlayback(8);
-			}
-		}
-		// update scene modes and locations
-		gPreviousSceneMode=gCurrentSceneMode;
-		PreviousLocation=CurrentLocation;
 
   	while(oscPipe.readRt(msg) > 0)
   	{
       parseMessage(msg);
   		oscPipe.writeRt(msg); // return the pointer to the other thread, where it will be destroyed
   	}
+
+		// if the touch pad is being held, enable solo mode
+		for(int swipeVal=0; swipeVal<16; swipeVal++){
+			if(CurrentSwipeValue[swipeVal]==1){
+				gCurrentSceneMode=true;
+				break;
+			}
+			gCurrentSceneMode=false;
+		}
+
+		// if solo mode has just been enabled
+		if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
+			// switch to the corresponding target song state
+			gTargetState=gCurrentTargetSong+5;
+			changeAudioFiles(5,gCurrentTargetSong+5);
+			// update the default location for the voiceover
+			for(int i=0;i<3;i++){
+				gVBAPActiveVector[5][i]=gVBAPDefaultVector[gCurrentTargetSong+5][i];
+			}
+			// find the target song position and set playback volumes
+			for(int song=0; song<5; song++){
+				// set target song volume to maximum
+				if(song==gCurrentTargetSong) gInputVolume[song]=1.0;
+				// mute other songs
+				else gInputVolume[song]=0.0;
+			}
+		}
+
+		// if touch pad has just been released
+		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
+			// stop the voiceover
+			pausePlayback(5);
+			// check for an accept gesture
+			if(CurrentLocation>PreviousLocation) {
+				//rt_printf("ACCEPT \n");
+				startPlayback(7);
+				resumeAllMusic(1.5);
+			}
+			// check for a reject getsture
+			if(CurrentLocation<PreviousLocation) {
+				//rt_printf("REJECT \n");
+				startPlayback(8);
+				resumeAllMusic(1.5);
+			}
+			// otherwise exit solo mode gracefully
+			else{
+				for(int song=0; song<5; song++){
+					if(song!=gCurrentTargetSong){
+						resumePlayback(song);
+					}
+				}
+			}
+		}
+
+		// update scene modes and locations
+		gPreviousSceneMode=gCurrentSceneMode;
+		PreviousLocation=CurrentLocation;
+
 		sendCurrentStatusOSC();
     oscPipe.setBlockingRt(false);
     gOSCCounter=0;
     gTimeCounter+=0.2;
   }
+	gSceneModeChange=true;
 }
 
 void sendCurrentStatusOSC(){
@@ -540,7 +556,6 @@ void sendCurrentStatusOSC(){
     oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
     oscClient.newMessage("/one/chooseBToggle").add(1.0f).send();
   }
-
 }
 
 void cleanupOSC(){

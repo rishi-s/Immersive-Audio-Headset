@@ -4,13 +4,22 @@
  ***** Code extended and adapted from Bela SampleStream example *****
  */
 
-extern bool gPlayingA;
-extern bool gPlayingB;
-bool gHeardAState=false;
-bool gHeardBState=false;
-
 
 #include "SampleStream.h" // adapted code for streaming/processing audio
+
+// variable from render.cpp
+extern int gPlaybackState;
+
+//user controlled variable from main.cpp
+extern bool gFixedTrajectory;
+
+// variables from OSC.h
+extern bool gHeardAState;
+extern bool gHeardBState;
+
+// variables from ABRoutine.h
+extern bool gPlayingA;
+extern bool gPlayingB;
 
 // method to create new sample stream with file, number of channels, buffer size
 SampleStream::SampleStream(const char* filename, int numChannels, int bufferLength, bool looping) {
@@ -81,7 +90,7 @@ int SampleStream::openFile(const char* filename, int numChannels, \
     gDoneLoadingBuffer = 1;
     gBufferToBeFilled = 0;
 
-    gPlaying = 1;
+    gPlaying = 0;
     gFadeAmount = 0;
     gFadeLengthInSeconds = 0.1;
     gFadeDirection = -1;
@@ -140,7 +149,7 @@ void SampleStream::processFrame() {
                 stopPlaying();
                 // stop all playback and update flags if using fixed trajectory
                 if(gFixedTrajectory) {
-                  gCurrentState=kStopped;
+                  gPlaybackState=kStopped;
                   if(gPlayingA)gHeardAState=true;
                   else if(gPlayingB)gHeardBState=true;
                 }
@@ -156,7 +165,7 @@ float SampleStream::getSample(int channel) {
     if(gPlaying) {
         // Wrap channel index in case there are more audio output channels than the file contains
         float out = gSampleBuf[gActiveBuffer][channel%gNumChannels].samples[gReadPtr];
-    	return out;
+    	return out * gFadeAmount * gFadeAmount;
     }
     return 0;
 

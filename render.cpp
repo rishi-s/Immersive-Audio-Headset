@@ -7,16 +7,16 @@
 #include <Bela.h>
 #include <cmath>
 #include <libraries/ne10/NE10.h>			         // neon library
-#include "spatialisation/SampleStream.h"       // adapted code for streaming/processing audio
-#include "spatialisation/SpatialSceneParams.h" // definition of audio sources and context
+#include "spatialisation/SampleStream.h"       // adapted audio streaming code
+#include "spatialisation/SpatialSceneParams.h" // definition of audio context
 #include "spatialisation/ImpulseLoader.h"      // code for loading HRTF IR files
 #include "spatialisation/ImpulseData.h"        // struct file to store IR data
-#include "spatialisation/VBAPData.h"           // lookup tables for VBAP speaker weightings
-#include "spatialisation/TestRoutine.h"        // code for testing defined trajectory
+#include "spatialisation/VBAPData.h"           // VBAP speaker weighting lookup
+#include "spatialisation/TestRoutine.h"        // defined trajectory testing
 #include "OSC.h"                               // OSC interfacing
-#include "VectorRotations.h"                   // bespoke code for point source vector rotation
+#include "VectorRotations.h"                   // point source vector rotation
 #include "spatialisation/Spatialisation.h"     // spatialisation engine
-#include "spatialisation/SpatialFocus.h"       // spatialisation engine
+#include "spatialisation/SpatialFocus.h"       // interaction engine
 
 #include "reverb/Network.h"
 SDN::Network *reverb;
@@ -25,13 +25,12 @@ SDN::Network *reverb;
 extern bool gFixedTrajectory;
 extern bool gTestMode;
 
-int gCurrentState=kPlaying;
+int gPlaybackState=kPlaying;
 bool gHeadLocked=0;
 
-// volume level variables for individual streams
-float gInputVolume[NUM_STREAMS]={1.0};
-
-float gMainVol=0.0;
+// volume level variables for individual streams and main output
+float gInputVolume[NUM_STREAMS]={};
+float gMainVol=0.7;
 
 // instantiate the sampleStream class for each stream
 SampleStream *sampleStream[NUM_STREAMS];
@@ -75,21 +74,24 @@ void render(BelaContext *context, void *userData){
   // check if buffers need filling using low priority auxiliary task
   Bela_scheduleAuxiliaryTask(gFillBuffersTask);
 
+
+
   // process the next audio frame
   for(unsigned int n = 0; n < context->audioFrames; n++) {
 
     // push/pop OSC messages
     checkOSC();
 
+
     // if playback is paused:
-    if(gCurrentState==kPaused){
+    if(gPlaybackState==kPaused){
       // kill the output
       context->audioOut[n * context->audioOutChannels + 0] = 0.0;
       context->audioOut[n * context->audioOutChannels + 1] = 0.0;
     }
 
     //if playback has just been stopped:
-    else if(gCurrentState==kStopped){
+    else if(gPlaybackState==kStopped){
       // kill the output
       context->audioOut[n * context->audioOutChannels + 0] = 0.0;
       context->audioOut[n * context->audioOutChannels + 1] = 0.0;
@@ -97,11 +99,11 @@ void render(BelaContext *context, void *userData){
       reinitialiseAudioStreams();
 
       // pause playback
-      gCurrentState=kPaused;
+      gPlaybackState=kPaused;
     }
 
     // if playback is active, proccess the audio
-    else if(gCurrentState==kPlaying){
+    else if(gPlaybackState==kPlaying){
 
       //use a defined 10 second trajectory for HRTF selection purposes
       if(gFixedTrajectory && !gTestMode)updatePositions();
@@ -115,10 +117,16 @@ void render(BelaContext *context, void *userData){
       // instantiate and initialise reverb send variable
       float reverbInput=0.0;
 
-      // INPUTS TO REVERB SYSTEM:
-      // process and read frames for each sampleStream object into input buffers
+      // PROCESS ALL streams
+      for(int stream=0; stream<NUM_STREAMS-1; stream++){
+        sampleStream[stream]->processFrame();
+
+      }
+
+      // INPUTS TO AURALISATION SYSTEM:
+      // process and read frames for each 3D stream  into input buffers
       for(int stream=0; stream<NUM_SIM_3D_STREAMS; stream++){
-        sampleStream[gPlaybackStates[gTargetState][stream]]->processFrame();
+
         // process stream for distance attenuation
         reverb->writeToDrySource(\
           sampleStream[gPlaybackStates[gTargetState][stream]]->getSample(0) \
@@ -131,19 +139,21 @@ void render(BelaContext *context, void *userData){
         gInputBuffer[stream][gInputBufferPointer] = \
           reverb->readFromDrySource(stream);
       }
-      for(int notifs=NUM_VBAP_TRACKS; notifs<NUM_STREAMS-1; notifs++){
-        sampleStream[notifs]->processFrame();
-        gInputBuffer[notifs][gInputBufferPointer] = \
-          sampleStream[notifs]->getSample(0);
-      }
 
-      //REVERB RETURN: Output from reverberator must be sent to spatialisation
+      // NON-SPATIALISED OUTPUT SUMMING:
+      // sum monoaural notification signals
+      float monoOut=0.0;
+      for(int notifs=NUM_VBAP_TRACKS; notifs<NUM_STREAMS-1; notifs++){
+        monoOut += sampleStream[notifs]->getSample(0);
+      }
+      gOutputBufferL[gOutputBufferWritePointer]+=monoOut;
+      gOutputBufferR[gOutputBufferWritePointer]+=monoOut;
+
+      //REVERB RETURN:
       // add reverb output to spare stream
       gInputBuffer[NUM_STREAMS-1][gInputBufferPointer] =  \
         reverb->scatterMono(reverbInput);
 
-
-      // OUTPUT SUMMING: Spatialised VBAP signals are summed here
       // copy output buffer L/R to audio output L/R
       for(unsigned int channel = 0; channel < context->audioOutChannels; channel++) {
         if(channel == 0) {
@@ -185,41 +195,47 @@ void createEnvironment(int sampleRate){
     float distance = reverb->addDrySource(sampleRate, \
       latCentre+sourceLat, longCentre+sourceLong, earLevel+sourceVertical, \
         stream);
-      rt_printf("Distance %i: %f (X: %f; Y: %f; Z: %f) \n", stream, \
-      distance, sourceLat, sourceLong, sourceVertical);
+      /*rt_printf("Distance %i: %f (X: %f; Y: %f; Z: %f) \n", stream, \
+      distance, sourceLat, sourceLong, sourceVertical);*/
   }
 }
 
 // function to prepare audio files for playback
 void loadAudioFiles(){
-  // load a playback .wav file into each buffer
+  // load a music file into buffers 1-5 or a voiceover file into buffer 6
   for(int track=0; track<NUM_VBAP_TRACKS; track++) {
     std::string number=to_string(track+1);
     std::string file= "./tracks/track" + number + ".wav";
     const char * id = file.c_str();
     if(track<=4) {
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
+      gInputVolume[track]=1.0;
+      sampleStream[track]->togglePlayback(1);
     }
+    // load a voiceover file into buffer 6
     else {
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
+      gInputVolume[track] = 0.7;
+      sampleStream[track]->togglePlayback(0);
     }
-    gInputVolume[track]=1.0;
   }
+  // load the sfx
   for(int sfx=NUM_VBAP_TRACKS; sfx<NUM_STREAMS-1; sfx++) {
     std::string number=to_string(sfx-5);
     std::string file= "./sfx/sfx" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[sfx] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
-    gInputVolume[sfx]=0.4;
+    gInputVolume[sfx]=1.25;
+    sampleStream[sfx]->togglePlayback(0);
   }
 }
 
 // function to setup localisation tests
 void setupLocalisationTests() {
-  createPairs();                              // create HRTF comparisons
-  createLocations();                          // create source locations
-  std::string file1= "./tracks/trumpet1.wav"; // load HRTF comparison stimulus
-  std::string file2= "./tracks/trumpet2.wav"; // load localisation stimulus
+  createPairs();                                // create HRTF comparisons
+  createLocations();                            // create source locations
+  std::string file1= "./tracks/trumpet1.wav";   // load HRTF comparison stimulus
+  std::string file2= "./tracks/trumpet2.wav";   // load localisation stimulus
   const char * trajectoryStim = file1.c_str();
   const char * sourceStim = file2.c_str();
   sampleStream[0]->openFile(trajectoryStim,NUM_CHANNELS,BUFFER_SIZE,false);
@@ -231,7 +247,6 @@ void setupLocalisationTests() {
 // function to change audio files during playback
 void changeAudioFiles(int oldTrack, int newTrack){
     // stop the current track and delete the playback object
-    sampleStream[oldTrack]->togglePlaybackWithFade(0,0.2);
     sampleStream[oldTrack]->stopPlaying();
     // create a new playback object and load the replacement .wav file
     std::string number=to_string(newTrack+1);
@@ -241,14 +256,36 @@ void changeAudioFiles(int oldTrack, int newTrack){
     sampleStream[oldTrack]->togglePlayback(1);
 }
 
-// function to pause all audio files during playback
-void pauseAudioFiles(){
-    // pause all files
-    for(int track=0; track<NUM_VBAP_TRACKS; track++){
-      sampleStream[track]->togglePlaybackWithFade(0.2);
+// function to pause all music files during playback
+void pauseAllMusic(float fade){
+    for(int track=0; track<NUM_VBAP_TRACKS-1; track++){
+      sampleStream[track]->togglePlayback(1);
+      sampleStream[track]->togglePlaybackWithFade(-1,fade); // pause with fade
     }
 }
 
+// function to resume all music files during playback
+void resumeAllMusic(float fade){
+    for(int track=0; track<NUM_VBAP_TRACKS-1; track++){
+      sampleStream[track]->togglePlayback(0);
+      sampleStream[track]->togglePlaybackWithFade(1,fade);  // resume with fade
+    }
+}
+
+// function to pause a specified audio file during playback
+void pausePlayback(int stream){
+    sampleStream[stream]->togglePlayback(1);
+    sampleStream[stream]->togglePlaybackWithFade(-1,0.001);
+}
+
+// function to resume a specified audio file during playback
+void resumePlayback(int stream){
+  // start test trajectory track
+    sampleStream[stream]->togglePlayback(0);
+    sampleStream[stream]->togglePlaybackWithFade(1,0.5);
+}
+
+// function to start a specified file from the buffered stream
 void startPlayback(int stream){
   // start test trajectory track
     sampleStream[stream]->togglePlayback(1);
@@ -256,7 +293,7 @@ void startPlayback(int stream){
 
 void reinitialiseAudioStreams(){
   // stop all tracks and set to refill input buffers
-  for(int stream=0; stream<NUM_STREAMS; stream++){
+  for(int stream=0; stream<NUM_STREAMS-1; stream++){
     sampleStream[stream]->stopPlaying();
   }
   Bela_scheduleAuxiliaryTask(gFillBuffersTask);

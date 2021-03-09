@@ -15,16 +15,13 @@
 #include <cstdlib>
 #include "SpatialSceneParams.h"  // definition of audio sources and context
 
-
-extern int gCurrentState;
-extern bool gFixedTrajectory;
-
 using namespace std;
 
 
 
-// state machine for playback
+// state machine for A/B comparison playback audition procedures
 enum States {kPlaying, kPaused, kStopped};
+
 
 
 

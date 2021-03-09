@@ -9,24 +9,32 @@
 
 #include <cmath>
 
-
+// variables from render.cpp
 extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
+extern void startPlayback(int stream);
+
+//variables from VectorRotations.h
 extern float gVBAPDefaultVector[NUM_FIXED_POSITIONS][3];
 extern float gVBAPActiveVector[NUM_VBAP_TRACKS][3];
 extern int gVBAPUpdateAzimuth[NUM_VBAP_TRACKS];
+
+//variables from OSC.h
 extern bool gCurrentSceneMode;
 extern bool gPreviousSceneMode;
-extern void startPlayback(int stream);
 
-int gFocusScene = 51;
-float gFocusSceneValues[2][51]={};
 
-int gPreviousTargetSong=0;
-int gCurrentTargetSong=0;
-int gTargetState=0;
+// variables to define focus scene attenuation
+int gFocusScene = 55;               // increments
+float gFocusSceneValues[55]={};  // increment values
+
+// variables for target song and accompanying target playback state
+int gPreviousTargetSong=0;          // last song in focus
+int gCurrentTargetSong=0;           // current song in focus
+bool gNewTargetReached=false;       // focus transition status
+int gTargetState=0;                 // state identifier and state makup
 int gPlaybackStates[10][3]={
-                          {0,1,2},{0,1,2},{1,2,3},{2,3,4},{2,3,4},
+                          {4,0,1},{0,1,2},{1,2,3},{2,3,4},{3,4,0},
                           {0,1,5},{1,2,5},{2,3,5},{3,4,5},{4,0,5}
                           };
 
@@ -34,28 +42,16 @@ int gPlaybackStates[10][3]={
 void initFocusScene(){
   // loop through applicable focus positions and calculate log gain
   for(int i=gFocusScene-1; i>=0; i--){
-    /*if(i < 18 && i >= 11){
-      // calculate gain for current position
-      gFocusSceneValues[1][i]=log10((i-8.0)/10) / log10(10) * -1.0;
-      // overwrite first six positions with no attenuation
-      //gFocusSceneValues[1][i-4]=1.0;
+    if(i >=41){
+      gFocusSceneValues[i]=log10((i-29.0)/26) / log10(26) * -1.0;
     }
-    if (i < 11 && i >= 4){
-      // calculate gain for current position
-      gFocusSceneValues[1][i]=log10((i-2.5)/148) / log10(148) * -1.0;
-      // overwrite first six positions with no attenuation
-      gFocusSceneValues[1][i-4]=1.0;
-    }*/
-    if(i >=38){
-      gFocusSceneValues[0][i]=log10((i-26.0)/25) / log10(25) * -1.0;
-    }
-    else if (i < 38 && i >=7 ){
-      gFocusSceneValues[0][i]=log10((i+6.0)/148) / log10(148) * -1.0;
+    else if (i < 41 && i >=8 ){
+      gFocusSceneValues[i]=log10((i+5.0)/165) / log10(165) * -1.0;
       // overwrite first eight positions
-      gFocusSceneValues[0][i-7]=0.5;
+      gFocusSceneValues[i-8]=0.5;
     }
-    rt_printf("Scene Level %i is: %f; Track Level %i is: %f\n",\
-      i, gFocusSceneValues[0][i], i, gFocusSceneValues[1][i]);
+    /*rt_printf("Scene Level %i is: %f; Track Level %i is: %f\n",\
+      i, gFocusSceneValues[i], i, gFocusSceneValues[i]);*/
   }
 }
 
@@ -74,16 +70,20 @@ void getFocusValues(){
         gVBAPUpdateAzimuth[song]<(gFocusScene*-1)){
         gInputVolume[song]=0.0;
       }
-      else gInputVolume[song]=gFocusSceneValues[0][position];
+      else gInputVolume[song]=gFocusSceneValues[position];
       // if the position is within target range and it is a different song
       if(position<=18){
         gCurrentTargetSong=song;
-        // if the target song has changed
+        // if the target song has changed, update the target state
         if(gCurrentTargetSong!=gPreviousTargetSong){
           gTargetState=gCurrentTargetSong;
-          startPlayback(6);
+          if(gPreviousSceneMode!=true)gNewTargetReached=true;
         }
         gPreviousTargetSong=gCurrentTargetSong;
+      }
+      if(position<8 && gNewTargetReached){
+        startPlayback(6);
+        gNewTargetReached=false;
       }
     }
   }

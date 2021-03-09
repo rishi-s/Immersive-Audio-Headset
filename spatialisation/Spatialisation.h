@@ -15,8 +15,12 @@
 // user controlled variables from main.cpp
 extern bool gHeadTracking;
 extern bool gHeadLocked;
+
+// variables from SpatialFocus.h
 extern int gTargetState;
 extern int gPlaybackStates[10][3];
+
+// variables from render.cpp
 extern void getFocusValues();
 
 // FFT overlap/add buffers and variables
@@ -128,10 +132,7 @@ void process_fft()
         // Add the reverb generator output to each virtual loudspeaker
         signalTimeDomainIn[n].r += (ne10_float32_t) \
           gInputBuffer[NUM_STREAMS-1][pointer] * gWindowBuffer[n];
-        /*signalTimeDomainIn[n].r += (ne10_float32_t) \
-            gInputBuffer[6][pointer] * gWindowBuffer[n];
-        signalTimeDomainIn[n].r += (ne10_float32_t) \
-            gInputBuffer[7][pointer] * gWindowBuffer[n];*/
+
         // Update "pointer" each time and wrap it around to keep it within the
         // circular buffer.
         pointer++;
@@ -177,11 +178,6 @@ void process_fft()
     //add spatialised signals
     gOutputBufferL[pointer] += signalTimeDomainOutL[n].r * gFFTScaleFactor;
     gOutputBufferR[pointer] += signalTimeDomainOutR[n].r * gFFTScaleFactor;
-    //add dry signals
-    for(int m=NUM_VBAP_TRACKS;m<NUM_STREAMS-1;m++){
-      gOutputBufferL[pointer] += gInputBuffer[m][pointer];
-      gOutputBufferR[pointer] += gInputBuffer[m][pointer];
-    }
     pointer++;
     if(pointer >= BUFFER_SIZE)
     pointer = 0;
@@ -228,7 +224,6 @@ void spatialiseAudio(){
       scheduleIMU();
       // print for reference
       // rt_printf("Yaw is %f; Pitch is %f; Roll is %f \n", ypr[0],ypr[1],ypr[2]);
-
       rotateVectors();
       getFocusValues();
     }

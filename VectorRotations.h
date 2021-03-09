@@ -11,7 +11,7 @@
 
 
 // ADD AZIMUTHS HERE: range -180 (anti-clockwise) to 180 (clockwise)
-int gVBAPDefaultAzimuth[NUM_FIXED_POSITIONS]={-74,-37,0,37,74,-74,-37,0,37,74};
+int gVBAPDefaultAzimuth[NUM_FIXED_POSITIONS]={-82,-41,0,41,82,-82,-41,0,41,82};
 
 // ADD ELEVATIONS HERE: -90 (down) to 90 (up)
 int gVBAPDefaultElevation[NUM_FIXED_POSITIONS]={0,0,0,0,0,30,30,30,30,30};
