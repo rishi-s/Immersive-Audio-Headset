@@ -37,7 +37,7 @@ extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
 extern float gMainVol;
 extern bool setupIMU(int sampleRate);
-extern void changeAudioFiles(int oldTrack, int newTrack);
+extern void changeAudioFiles(int oldTrack, int newTrack, string filetype);
 extern void pauseAllMusic(float fade);
 extern void resumeAllMusic(float fade);
 extern void pausePlayback(int stream);
@@ -76,6 +76,9 @@ int PreviousLocation=0;
 
 int gOSCCounter=0;							// counter for OSC check interval
 float gTimeCounter=0;						// counter for time event logging
+int gTrackListCounter=5;
+int gTrackSceneCounter[5]={0,1,2,3,4};
+int gTaskCounter=1;
 
 
 // monitor messages received by OSC Server
@@ -471,7 +474,7 @@ void checkOSC(){
 		if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
 			// switch to the corresponding target song state
 			gTargetState=gCurrentTargetSong+5;
-			changeAudioFiles(5,gCurrentTargetSong+5);
+			changeAudioFiles(5,gTrackSceneCounter[gCurrentTargetSong],"_VXO.wav");
 			// update the default location for the voiceover
 			for(int i=0;i<3;i++){
 				gVBAPActiveVector[5][i]=gVBAPDefaultVector[gCurrentTargetSong+5][i];
@@ -489,11 +492,21 @@ void checkOSC(){
 		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
 			// stop the voiceover
 			pausePlayback(5);
-			// check for an accept gesture
+			// if there was an accept gesture
 			if(CurrentLocation>PreviousLocation) {
-				//rt_printf("ACCEPT \n");
+				// play notification
 				startPlayback(7);
+				// change the song in the current target position to the next in list
+				gTrackSceneCounter[gCurrentTargetSong]=gTrackListCounter;
+				// if we've reached the end of the playlist, go back to the beginning
+				if(++gTrackListCounter==30) gTrackListCounter=0;
+				// load the new audio file
+				changeAudioFiles(gCurrentTargetSong,gTrackSceneCounter[gCurrentTargetSong],".wav");
+				// fade back all tracks
 				resumeAllMusic(1.5);
+				rt_printf("Current Tracks: %i, %i, %i, %i, %i\n", \
+					gTrackSceneCounter[0], gTrackSceneCounter[1], gTrackSceneCounter[2], \
+					gTrackSceneCounter[3], gTrackSceneCounter[4]);
 			}
 			// check for a reject getsture
 			if(CurrentLocation<PreviousLocation) {

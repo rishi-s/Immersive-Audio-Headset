@@ -79,8 +79,10 @@ void getFocusValues(){
           gTargetState=gCurrentTargetSong;
           if(gPreviousSceneMode!=true)gNewTargetReached=true;
         }
+        // update the previous state as a matter of course
         gPreviousTargetSong=gCurrentTargetSong;
       }
+      // play a click notification any time a new target is clearly in focus
       if(position<8 && gNewTargetReached){
         startPlayback(6);
         gNewTargetReached=false;
