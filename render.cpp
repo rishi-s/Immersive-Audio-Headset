@@ -211,6 +211,7 @@ void loadAudioFiles(){
       const char * id = file.c_str();
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
       gInputVolume[track]=1.0;
+      updatePlaylistLog(track, track, true, 0.0, 0.0);
       sampleStream[track]->togglePlayback(1);
     }
     // load the first voiceover file into buffer 6
