@@ -65,9 +65,11 @@ bool setup(BelaContext *context, void *userData)
   setupOSC();                                   // setup OSC communication
   initFocusScene();                             // calculate focus gain values
   if(gFixedTrajectory)setupLocalisationTests();
-  initFFTProcesses();                            // initialise FFT processing
+  initFFTProcesses();                           // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
-    "fill-buffer")) == 0) return false;          // fill buffers
+    "fill-buffer")) == 0) return false;         // fill buffers
+  if((gReorderPlaylist = Bela_createAuxiliaryTask(&gRemoveTrack_background, 80, \
+    "reorder tracklist"))== 0) return false;
   return true;
 }
 
@@ -211,7 +213,7 @@ void loadAudioFiles(){
       const char * id = file.c_str();
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
       gInputVolume[track]=1.0;
-      updatePlaylistLog(track, track, true, 0.0, 0.0);
+      updatePlaylistLog(track, track, 0.0);
       sampleStream[track]->togglePlayback(1);
     }
     // load the first voiceover file into buffer 6
@@ -255,7 +257,7 @@ void changeAudioFiles(int scenePosition, int newTrack, string fileType){
     // create a new playback object and load the replacement .wav file
     std::string file = "./tracks/" + taskOne[newTrack]+ fileType;
     const char * id = file.c_str();
-    rt_printf("%s \n",id);
+    //rt_printf("%s \n",id);
 
     sampleStream[scenePosition]->openFile(id,NUM_CHANNELS,BUFFER_SIZE,false);
     sampleStream[scenePosition]->togglePlayback(1);

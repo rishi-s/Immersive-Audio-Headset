@@ -14,9 +14,11 @@
 #include <libraries/OscReceiver/OscReceiver.h>
 #include <libraries/OscSender/OscSender.h>
 #include <libraries/Pipe/Pipe.h>
-#include "spatialisation/SpatialSceneParams.h" // definition of audio sources and context
-#include "spatialisation/SampleStream.h"       // adapted code for streaming/processing audio
-#include "spatialisation/ABRoutine.h"          // HRTF comparison trial structure
+#include "spatialisation/SpatialSceneParams.h" // definition of audio context
+#include "spatialisation/SampleStream.h"       // adapted audio streaming code
+#include "spatialisation/ABRoutine.h"          // HRTF comparison trial
+#include "spatialisation/SpatialFocus.h"       // head-tracked gain code
+#include "spatialisation/TrackData.h"          // playlist interaction handling
 
 
 //variables from VectorRotations.h
@@ -30,8 +32,6 @@ extern int gVBAPUpdateElevation[NUM_VBAP_TRACKS];
 
 // variables from render.cpp
 extern bool gFixedTrajectory;
-
-// variables from render.cpp
 extern int gPlaybackState;
 extern bool gHeadLocked;
 extern float gInputVolume[NUM_STREAMS];
@@ -44,9 +44,6 @@ extern void pausePlayback(int stream);
 extern void resumePlayback(int stream);
 extern void startPlayback(int stream);
 
-// variables from SpatialFocus.cpp
-extern int gCurrentTargetSong;
-extern int gTargetState;
 
 // OSC initialisation and communication handling
 Pipe oscPipe;
@@ -61,31 +58,40 @@ void checkChannelMessages(oscpkt::Message* msg);
 void checkGlobalMessages(oscpkt::Message* msg);
 void runHRTFComparisonChecks(oscpkt::Message* msg);
 void runLocalisationTestChecks(oscpkt::Message* msg);
+void changeTrack(int notification);
 
 
 // AB comparison states
-bool gHeardAState = false;			// has example A been heard in entirety
-bool gHeardBState = false;			// has example B been heard in entirety
+bool gHeardAState = false;				// has example A been heard in entirety
+bool gHeardBState = false;				// has example B been heard in entirety
 
 // head-tracker interfacing
-int gHRTF=0;		    						// HRTF set for binauralisation
-bool gCalibrate=0;  						// headtracking calibration state
+int gHRTF=0;		    							// HRTF set for binauralisation
+bool gCalibrate=0;  							// headtracking calibration state
 
 
-bool gCurrentSceneMode=false;		// current solo/concurrent stream mode
-bool gPreviousSceneMode=false;	// previous solo/concurrent stream mode
-int gCurrentSwipeValue[16]={};	// swipe interface states
-int gCurrentLocation=0;					// current swipe interface contact position
-int gPreviousLocation=0;				// previous swipe interface contact position
+bool gCurrentSceneMode=false;			// current solo/concurrent stream mode
+bool gPreviousSceneMode=false;		// previous solo/concurrent stream mode
+int gCurrentSwipeValue[16]={};		// swipe interface states
+int gCurrentLocation=0;						// current swipe interface contact position
+int gPreviousLocation=0;					// previous swipe interface contact position
+bool gTransitionContact=false;		// transition contact state
+bool gCurrentSwipeActivity=false;
+bool gPreviousSwipeActivity=false;
 
 
-int gOSCCounter=0;							// counter for OSC check interval
-float gTimeCounter=0;						// counter for time event logging
-int gPlaylistCounter=5;					// counter for current playlist
-int gPlaylistMax=30;						// maximum count for current playlist
-int gRejectCounter=0;						// running tally of rejected songs
-int gTaskCounter=1;							// current task number
-int gSceneTracks[5]={0,1,2,3,4};// current tracks
+
+int gFS=44100;										// global sample rate
+float gOSCRate=8820;							// OSC refresh rate
+float gTimeInc=gOSCRate/gFS;			// time increment
+int gOSCCounter=0;								// counter for OSC check interval
+float gTimeCounter=0;							// counter for time event logging
+int gPlaylistCounter=5;						// counter for current playlist
+int gRejectCounter=0;							// running tally of rejected songs
+int gLastRemovedTrack=0;					// variable to store removed track ID
+int gTaskCounter=1;								// current task number
+int gSceneTracks[5]={0,1,2,3,4};	// current tracks
+int gEnd=gDynamicPlaylist.size(); // max count for current playlist
 
 
 
@@ -112,18 +118,32 @@ void parseMessage(oscpkt::Message* msg){
 	//rt_printf("received message to: %s\n", msg->addressPattern().c_str());
 
 	// variables to store OSC input arguments
-	int intArg;
+	//int intArg;
 	float floatArg;
 
-	// if there is any activity on the swipe area:
+	// record any activity on the swipe area, including current position:
 	for(int buttonNo=1; buttonNo<=16; buttonNo++){
 		std::string buttonID=to_string(buttonNo);
+		// store any button activation event and its location
 		if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
-			gCurrentSwipeValue[buttonNo-1]=floatArg;			// store button value
-			if(floatArg==1.0)	gCurrentLocation=buttonNo;	// store button number
+			// store the button value in the array
+			gCurrentSwipeValue[buttonNo-1]=floatArg;
+			// if it is a movement off a button, update the new location
+			if(floatArg==0.0)	{
+				gCurrentLocation=buttonNo;
+				gTransitionContact=true;
+			}
+			// if it is a movement on a button, update both locations
+			if(floatArg==1.0)	{
+				gPreviousLocation=gCurrentLocation;
+				gCurrentLocation=buttonNo;
+			}
 			//rt_printf("received mode command %i, %f \n", buttonNo, floatArg);
+			// also set the transition flag to true for release events
+			gCurrentSwipeActivity=true;
 		}
 	}
+
 
 	checkChannelMessages(msg);
 	checkGlobalMessages(msg);
@@ -198,8 +218,8 @@ bool setupOSC(){
 
 
 void checkOSC() {
-	// send/receive curret status by OSC every 1/10 sec
-	if(++gOSCCounter>=4410){
+	// send/receive curret status by OSC every 1/5 sec
+	if(++gOSCCounter>=gOSCRate){
 
 
 		oscpkt::Message* msg;
@@ -210,22 +230,23 @@ void checkOSC() {
 			oscPipe.writeRt(msg); // return the pointer to the other thread, where it will be destroyed
 		}
 
-		// if the touch pad is being held, enable solo mode
+		// if the touch pad is active ( held or in transition), enable solo mode
 		for(int swipeVal=0; swipeVal<16; swipeVal++){
-			if(gCurrentSwipeValue[swipeVal]==1){
+			if(gTransitionContact || gCurrentSwipeValue[swipeVal]==1){
 				gCurrentSceneMode=true;
 				break;
 			}
 			gCurrentSceneMode=false;
 		}
 
-		if(gCurrentSceneMode==true){
+		// if we are in solo mode
+		if(gCurrentSceneMode){
 			// increment the active listening time of the target song
-			gActiveListen[gSceneTracks[gCurrentTargetSong]]+=0.1;
+			gActiveListen[gSceneTracks[gCurrentTargetSong]]+=gTimeInc;
 		}
 
 		// if solo mode has just been enabled
-		if(gCurrentSceneMode==true && gPreviousSceneMode ==false){
+		if(gCurrentSceneMode && !gPreviousSceneMode){
 			// switch to the corresponding target song state
 			gTargetState=gCurrentTargetSong+5;
 			// update the voiceover file
@@ -244,32 +265,23 @@ void checkOSC() {
 		}
 
 		// if touch pad has just been released
-		if(gCurrentSceneMode==false && gPreviousSceneMode ==true){
+		if(!gCurrentSceneMode && gPreviousSceneMode && gPreviousSwipeActivity){
+
 			// stop the voiceover
 			pausePlayback(5);
-			// if there was an accept gesture
+			// if there was an accept gesture, change the track
 			if(gCurrentLocation>gPreviousLocation) {
-				// play notification
-				startPlayback(7);
-				// change the song in the current target position to the next in list
-				gSceneTracks[gCurrentTargetSong]=gPlaylistCounter;
-				// if we've reached the end of the playlist, go back to the beginning
-				if(++gPlaylistCounter==gPlaylistMax) gPlaylistCounter=0;
-				// load the new audio file
-				changeAudioFiles(gCurrentTargetSong,gSceneTracks[gCurrentTargetSong],".wav");
-				updatePlaylistLog(gSceneTracks[gCurrentTargetSong], gCurrentTargetSong, \
-					true,0.0,0.0);
-				// fade back all tracks
-				resumeAllMusic(1.5);
-				/*rt_printf("Current Tracks: %i, %i, %i, %i, %i\n", \
-				gSceneTracks[0], gSceneTracks[1], gSceneTracks[2], \
-				gSceneTracks[3], gSceneTracks[4]);*/
+				changeTrack(7);
 			}
-			// check for a reject getsture
+			// if there was a reject getsture
 			if(gCurrentLocation<gPreviousLocation) {
-				//rt_printf("REJECT \n");
-				startPlayback(8);
-				resumeAllMusic(1.5);
+				// log the track as rejected
+				gSelectionStatus[gSceneTracks[gCurrentTargetSong]]=false;
+				gLastRemovedTrack=gSceneTracks[gCurrentTargetSong];
+				// change the track
+				changeTrack(8);
+				// compress the playlist in a low priority thread
+				Bela_scheduleAuxiliaryTask(gReorderPlaylist);
 			}
 			// otherwise exit solo mode gracefully
 			else{
@@ -283,7 +295,10 @@ void checkOSC() {
 
 		// update scene modes and locations
 		gPreviousSceneMode=gCurrentSceneMode;
-		gPreviousLocation=gCurrentLocation;
+		gPreviousSwipeActivity=gCurrentSwipeActivity;
+		if(!gPreviousSwipeActivity) gPreviousLocation=gCurrentLocation;
+		gCurrentSwipeActivity=false;
+		gTransitionContact=false;
 
 		// send current status to UI
 		sendCurrentStatusOSC();
@@ -291,11 +306,58 @@ void checkOSC() {
 		oscPipe.setBlockingRt(false);
 		// update counters
 		gOSCCounter=0;
-		gTimeCounter+=0.1;
+		// increment time on task counter and background listening for each track
+		gTimeCounter+=gTimeInc;
 		for(int song=0; song<5; song++){
-			gBackgroundListen[gSceneTracks[song]]+=0.1;
+			gBackgroundListen[gSceneTracks[song]]+=gTimeInc;
 		}
 	}
+}
+
+void changeTrack(int notification){
+	// play notification
+	startPlayback(notification);
+	rt_printf("Old = %i; ", gSceneTracks[gCurrentTargetSong]);
+
+
+	// change song to the next in dynamic list not currenlty playing
+	bool avoidDuplicate=true;
+	while(avoidDuplicate){
+		// assume the next song is not the same as any currently playing
+		avoidDuplicate=false;
+		// check if there is a duplicate
+		for(int song=0; song<5; song++){
+			// if any matches the next in the dynamic playlist
+			if (gDynamicPlaylist[gPlaylistCounter]==gSceneTracks[song]){
+				// avoid this one, increment the playlist and check again
+				avoidDuplicate=true;
+				if(++gPlaylistCounter==gEnd)gPlaylistCounter=0;
+			}
+		}
+	}
+
+	// if there's no match proceed with the next track
+	gSceneTracks[gCurrentTargetSong]=gDynamicPlaylist[gPlaylistCounter];
+
+	rt_printf("New = %i; ", gSceneTracks[gCurrentTargetSong]);
+		// move playlist counter and if we've reached the end
+	if(++gPlaylistCounter==gEnd){
+		// go back to the beginning
+		gPlaylistCounter=0;
+		// play the notification
+		startPlayback(9);
+	}
+	rt_printf("Counter = %i; Range = %i \n",	\
+		gPlaylistCounter, gDynamicPlaylist.size());
+	// load the new audio file
+	changeAudioFiles(gCurrentTargetSong,gSceneTracks[gCurrentTargetSong],".wav");
+	updatePlaylistLog(gSceneTracks[gCurrentTargetSong], gCurrentTargetSong, \
+		gTimeCounter);
+	// fade back all tracks
+	resumeAllMusic(1.5);
+	rt_printf("Current Tracks: %i, %i, %i, %i, %i\n", \
+		gSceneTracks[0], gSceneTracks[1], gSceneTracks[2], \
+		gSceneTracks[3], gSceneTracks[4]);
 }
 
 void sendCurrentStatusOSC(){
@@ -377,7 +439,7 @@ void checkGlobalMessages(oscpkt::Message* msg){
 	}
 	else if (msg->match("/one/reinitIMU").popFloat(floatArg).isOkNoMoreArgs()){
 		if(floatArg>0.0){
-			setupIMU(44100);
+			setupIMU(gFS);
 		}
 	}
 	else if (msg->match("/two/pause").popFloat(floatArg).isOkNoMoreArgs()){
@@ -506,7 +568,7 @@ void runHRTFComparisonChecks(oscpkt::Message* msg){
 					rt_printf("Losing HRTF is %i \n", gLosingHRTF);
 					// enable head tracking reading and reinitialise IMU for good measure
 					gHeadLocked=0;
-					setupIMU(44100);
+					setupIMU(gFS);
 				}
 				gChoiceState=kNoneSelected;
 				gPlaybackState=kStopped;
