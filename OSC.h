@@ -85,13 +85,14 @@ int gFS=44100;										// global sample rate
 float gOSCRate=8820;							// OSC refresh rate
 float gTimeInc=gOSCRate/gFS;			// time increment
 int gOSCCounter=0;								// counter for OSC check interval
+int gTaskCounter=1;								// current task number
 float gTimeCounter=0;							// counter for time event logging
 int gPlaylistCounter=5;						// counter for current playlist
 int gRejectCounter=0;							// running tally of rejected songs
 int gLastRemovedTrack=0;					// variable to store removed track ID
-int gTaskCounter=1;								// current task number
 int gSceneTracks[5]={0,1,2,3,4};	// current tracks
-int gEnd=gDynamicPlaylist.size(); // max count for current playlist
+int gEnd=gDynamicPlaylist[gTaskCounter-1].size(); // max count for playlist
+
 
 
 
@@ -328,7 +329,7 @@ void changeTrack(int notification){
 		// check if there is a duplicate
 		for(int song=0; song<5; song++){
 			// if any matches the next in the dynamic playlist
-			if (gDynamicPlaylist[gPlaylistCounter]==gSceneTracks[song]){
+			if (gDynamicPlaylist[gTaskCounter-1][gPlaylistCounter]==gSceneTracks[song]){
 				// avoid this one, increment the playlist and check again
 				avoidDuplicate=true;
 				if(++gPlaylistCounter==gEnd)gPlaylistCounter=0;
@@ -337,7 +338,7 @@ void changeTrack(int notification){
 	}
 
 	// if there's no match proceed with the next track
-	gSceneTracks[gCurrentTargetSong]=gDynamicPlaylist[gPlaylistCounter];
+	gSceneTracks[gCurrentTargetSong]=gDynamicPlaylist[gTaskCounter-1][gPlaylistCounter];
 
 	rt_printf("New = %i; ", gSceneTracks[gCurrentTargetSong]);
 		// move playlist counter and if we've reached the end
@@ -348,7 +349,7 @@ void changeTrack(int notification){
 		startPlayback(9);
 	}
 	rt_printf("Counter = %i; Range = %i \n",	\
-		gPlaylistCounter, gDynamicPlaylist.size());
+		gPlaylistCounter, gDynamicPlaylist[gTaskCounter-1].size());
 	// load the new audio file
 	changeAudioFiles(gCurrentTargetSong,gSceneTracks[gCurrentTargetSong],".wav");
 	updatePlaylistLog(gSceneTracks[gCurrentTargetSong], gCurrentTargetSong, \
@@ -446,7 +447,6 @@ void checkGlobalMessages(oscpkt::Message* msg){
 		if(floatArg==0.0){
 			rt_printf("received pause command: %f \n", floatArg);
 			pauseAllMusic(2.0);
-			writePlaylistLog();
 		}
 	}
 	else if (msg->match("/two/mainvol").popFloat(floatArg).isOkNoMoreArgs()){

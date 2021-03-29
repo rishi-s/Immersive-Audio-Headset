@@ -12,53 +12,88 @@
 #include <sstream>
 #include <vector>
 
+#define NUM_TASKS 3
+
+
+// variables from render.cpp
+extern void loadAudioFiles();
+extern int gPlaybackState;
 
 // variables from OSC.h
-extern int gSceneTracks[];
+extern int gTaskCounter;
+extern float gTimeCounter;
 extern int gPlaylistCounter;
-extern int gEnd;
+extern int gRejectCounter;
 extern int gLastRemovedTrack;
+extern int gSceneTracks[];
+extern int gEnd;
 
 // variables from SpatialFocus.h
 extern int gCurrentTargetSong;
 
-string taskOne[30];          // string array to hold track filenames
-std::vector<int> gDynamicPlaylist (30);
-std::vector<int> gDecisionList;
-std::vector<int> gFirstPosition;
-std::vector<float> gFirstTime;
-std::vector<int> gLastPosition;
-std::vector<float> gLastTime;
-std::vector<int> gAppearances;
-std::vector<bool> gSelectionStatus;
-std::vector<float> gActiveListen;
-std::vector<float> gBackgroundListen;
+
+
+
+int gTaskLengths[NUM_TASKS];          // number of tracks in each task playlist
+int gTaskAnswers[NUM_TASKS];          // number of answers required of each task
+
+
+// vectors for playlist interaction
+std::vector <string> gTaskList[NUM_TASKS];    // track titles
+std::vector<int> gDynamicPlaylist[NUM_TASKS]; // dynamic playlist
+std::vector<int> gDecisionList;               // responses
+std::vector<int> gFirstPosition;              // track start position
+std::vector<float> gFirstTime;                // track start time
+std::vector<int> gLastPosition;               // track end position
+std::vector<float> gLastTime;                 // track end time
+std::vector<int> gAppearances;                // track appearances
+std::vector<bool> gSelectionStatus;           // track status
+std::vector<float> gActiveListen;             // active listening duration
+std::vector<float> gBackgroundListen;         // background listening duration
 
 
 // instantialte auxiliary task to reorder dynamic playlist
 AuxiliaryTask gReorderPlaylist;
-void gRemoveTrack_background(void *);
+AuxiliaryTask gLoadPlaylist;
+AuxiliaryTask gWriteResponses;
+
+void removeTrack_background(void *);
+void loadAudioFiles_background(void *);
+void writePlaylistLog(void *);
 
 
-
-// function to extraxt track names from .csv
+// function to extract track names from .csv
 void getTaskTracks(){
-  // open the VBAP gain array .csv
-  std::ifstream file("tracks/TaskTracks.csv");
 
-  // loop through each row
-  for(int row = 0; row <30; row++)
-  {
-    gDynamicPlaylist[row]=row;
-    // check if file data is readable
-    if ( !file.good() )
-    break;
-    // extract the line as a string and assign to array
+
+
+  for (int i=0; i<NUM_TASKS; i++){
+    // open the track list .csv
+    std::ifstream file("tracks/Task" + to_string(i+1) + "Tracks.csv");
+
+    // create a string object to read each line
     std::string line;
-    std::getline(file, line);
-    std::stringstream convertor(line);
-    convertor>>taskOne[row];
-    rt_printf("%i = %s; %i\n", row, taskOne[row].c_str(), gDynamicPlaylist[row]);
+
+    int index=0;
+    // check if file data is readable
+    if (file.good() ){
+      // read consecutive lines in a loop
+      while(getline(file, line)){
+        //convert the next line to a readable string and store in a variable
+        std::stringstream convertor(line);
+        string trackTitle;
+        convertor>> trackTitle;
+        // add the strings to the required vectors and increment index
+        gTaskList[i].push_back(trackTitle);
+        gDynamicPlaylist[i].push_back(index);
+        rt_printf("%s = %i\n", gTaskList[i][index].c_str(), \
+          gDynamicPlaylist[i][index]);
+        index++;
+      }
+    }
+    // log the task length and answer requirement
+    gTaskLengths[i]=index+1;
+    gTaskAnswers[i]=(index+1)/2;
   }
 }
 
@@ -99,33 +134,67 @@ void updatePlaylistLog(int track, int position, float timeStamp){
     }
 }
 
-
-void gRemoveTrack(int removedTrack){
+// function to resize dynamic playlist
+void removeTrack(int removedTrack){
   // find location of rejected track in the dynamic playlist and remove
-  for(int track=0; track<gDynamicPlaylist.size(); track++){
-      if(gDynamicPlaylist[track]==removedTrack){
-        gDynamicPlaylist.erase(gDynamicPlaylist.begin()+track);
+  for(int track=0; track<gDynamicPlaylist[gTaskCounter-1].size(); track++){
+      if(gDynamicPlaylist[gTaskCounter-1][track]==removedTrack){
+        gDynamicPlaylist[gTaskCounter-1].erase(gDynamicPlaylist[gTaskCounter-1].begin()+track);
       }
       // print each track number in the dynamic playlist
-      rt_printf("%i,",gDynamicPlaylist[track]);
+      rt_printf("%i,",gDynamicPlaylist[gTaskCounter-1][track]);
   }
   // revise the dynamic playlist size
-  gEnd=gDynamicPlaylist.size();
+  gEnd=gDynamicPlaylist[gTaskCounter-1].size();
+  // if the task is complete
+  if(gEnd==gTaskAnswers[gTaskCounter-1]){
+    rt_printf("** CHANGE! **\n");
+    // and if we still have tasks left to do
+    if(++gTaskCounter<=NUM_TASKS) {
+      // write the final responses
+      Bela_scheduleAuxiliaryTask(gWriteResponses);
+      // load the next set of audio
+      Bela_scheduleAuxiliaryTask(gLoadPlaylist);
+      rt_printf("Load command issued.");
+      // reset all task-related variables
+      gTimeCounter=0;
+      gPlaylistCounter=5;
+      gRejectCounter=0;
+      gLastRemovedTrack=0;
+      for(int song=0;song<5;song++){gSceneTracks[song]=song;}
+      gEnd=gDynamicPlaylist[gTaskCounter-1].size();
+
+    }
+    // otherwise stop the audio and write final responses
+    else{
+      gTaskCounter=NUM_TASKS+1;
+      rt_printf("Stop Now");
+      Bela_scheduleAuxiliaryTask(gWriteResponses);
+      rt_printf("Stopped");
+    }
+  }
   // decrement the playlist counter and if we've reached the beginning, wrap it
   if(--gPlaylistCounter<0)gPlaylistCounter=gEnd-1;
   rt_printf("\nReset Counter = %i; Reset Range = %i \n",	\
-    gPlaylistCounter, gDynamicPlaylist.size());
+    gPlaylistCounter, gDynamicPlaylist[gTaskCounter-1].size());
 }
 
+
 // function to resize dynamic playlist in background
-void gRemoveTrack_background(void *){
-  gRemoveTrack(gLastRemovedTrack);
+void loadAudioFiles_background(void *){
+  loadAudioFiles();
+}
+
+
+// function to resize dynamic playlist in background
+void removeTrack_background(void *){
+  removeTrack(gLastRemovedTrack);
 }
 
 
 // funciton to write the playlist interaction log
-void writePlaylistLog(){
-  std::ofstream Log("PlaylistLog.csv");
+void writePlaylistLog(void *){
+  std::ofstream Log("PlaylistLog" + to_string(gTaskCounter-1) + ".csv");
   Log << "Track,Pos1,Time1,Pos2,Time2,Appearances,Status,Active,Background" << '\n';
   for (int i = 0; i < gDecisionList.size(); i++) {
     Log << gDecisionList[i] << ',';
@@ -138,7 +207,6 @@ void writePlaylistLog(){
     Log << gActiveListen[i] << ',';
     Log << gBackgroundListen[i] << ',' << '\n';;
   }
-  gDynamicPlaylist.clear();
   gDecisionList.clear();
   gFirstPosition.clear();
   gFirstTime.clear();

@@ -56,7 +56,7 @@ bool setup(BelaContext *context, void *userData)
   setupIMU(context->audioSampleRate);           // initialise IMU
   pinMode(context, 0, buttonPin, INPUT);        // initialise button for IMU
   loadImpulse(gHRIRLength);                     // load HRIRs
-  getTaskTracks();                              // import track filenames
+  getTaskTracks();                // import track filenames
   loadAudioFiles();                             // load audio files
   prepFFTBuffers();                             // set up FFT
   transformHRIRs(gHRIRLength, gConvolutionSize);// convert HRIRs to Hz domain
@@ -68,8 +68,12 @@ bool setup(BelaContext *context, void *userData)
   initFFTProcesses();                           // initialise FFT processing
   if((gFillBuffersTask = Bela_createAuxiliaryTask(&fillBuffers, 89, \
     "fill-buffer")) == 0) return false;         // fill buffers
-  if((gReorderPlaylist = Bela_createAuxiliaryTask(&gRemoveTrack_background, 80, \
+  if((gReorderPlaylist = Bela_createAuxiliaryTask(&removeTrack_background, 85, \
     "reorder tracklist"))== 0) return false;
+  if((gLoadPlaylist = Bela_createAuxiliaryTask(&loadAudioFiles_background, 75, \
+    "refresh tracklist"))== 0) return false;
+  if((gWriteResponses = Bela_createAuxiliaryTask(&writePlaylistLog, 80, \
+    "write task response log"))== 0) return false;
   return true;
 }
 
@@ -209,7 +213,7 @@ void loadAudioFiles(){
   // load music files into buffers 1-5 or a voiceover file into buffer 6
   for(int track=0; track<NUM_VBAP_TRACKS; track++) {
     if(track<=4) {
-      std::string file= "./tracks/" + taskOne[track] + ".wav";
+      std::string file= "./tracks/" + gTaskList[gTaskCounter-1][track] + ".wav";
       const char * id = file.c_str();
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
       gInputVolume[track]=1.0;
@@ -218,7 +222,7 @@ void loadAudioFiles(){
     }
     // load the first voiceover file into buffer 6
     else {
-      std::string file= "./tracks/" + taskOne[0] + "_VXO.wav";
+      std::string file= "./tracks/" + gTaskList[gTaskCounter-1][0] + "_VXO.wav";
       const char * id = file.c_str();
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
       gInputVolume[track] = 1.2;
@@ -234,6 +238,7 @@ void loadAudioFiles(){
     gInputVolume[sfx]=1.5;
     sampleStream[sfx]->togglePlayback(0);
   }
+  rt_printf("SUCCESS – Files Loaded");
 }
 
 // function to setup localisation tests
@@ -255,7 +260,7 @@ void changeAudioFiles(int scenePosition, int newTrack, string fileType){
     // stop the current track and delete the playback object
     sampleStream[scenePosition]->stopPlaying();
     // create a new playback object and load the replacement .wav file
-    std::string file = "./tracks/" + taskOne[newTrack]+ fileType;
+    std::string file = "./tracks/" + gTaskList[gTaskCounter-1][newTrack]+ fileType;
     const char * id = file.c_str();
     //rt_printf("%s \n",id);
 

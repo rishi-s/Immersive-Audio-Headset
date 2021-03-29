@@ -68,32 +68,44 @@ void getFocusValues(){
       // if the source is out of range, silence it
       if(gVBAPUpdateAzimuth[song]> gFocusScene || \
         gVBAPUpdateAzimuth[song]<(gFocusScene*-1)){
-        gInputVolume[song]=0.0;
-      }
-      else gInputVolume[song]=gFocusSceneValues[position];
-      // if the position is within target range and it is a different song
-      if(position<=18){
-        gCurrentTargetSong=song;
-        // if the target song has changed, update the target state
-        if(gCurrentTargetSong!=gPreviousTargetSong){
-          gTargetState=gCurrentTargetSong;
-          if(gPreviousSceneMode!=true)gNewTargetReached=true;
+          gInputVolume[song]=0.0;
         }
-        // update the previous state as a matter of course
-        gPreviousTargetSong=gCurrentTargetSong;
-      }
-      // play a click notification any time a new target is clearly in focus
-      if(position<8 && gNewTargetReached){
-        startPlayback(6);
-        gNewTargetReached=false;
+        else gInputVolume[song]=gFocusSceneValues[position];
+        // if the position is within target range and it is a different song
+        if(position<=18){
+          gCurrentTargetSong=song;
+          // if the target song has changed, update the target state
+          if(gCurrentTargetSong!=gPreviousTargetSong){
+            gTargetState=gCurrentTargetSong;
+            if(gPreviousSceneMode!=true)gNewTargetReached=true;
+          }
+          // update the previous state as a matter of course
+          gPreviousTargetSong=gCurrentTargetSong;
+        }
+        // play a click notification any time a new target is clearly in focus
+
+        //widen the notification trigger area for extreme (L&R) positions
+        if(song == 0 || song == 4){
+          if(position<10 && gNewTargetReached){
+            startPlayback(6);
+            gNewTargetReached=false;
+          }
+        }
+
+        // keep the trigger area small for frontal positions
+        else{
+          if(position<3 && gNewTargetReached){
+            startPlayback(6);
+            gNewTargetReached=false;
+          }
+        }
       }
     }
-  }
 
-  // Print the current target song and playback state
-  //rt_printf("Target song is: %i (%i)\n", gCurrentTargetSong, position);
-  /*rt_printf("TARGET – song is: %i; position is: %i; state is\n", \
-  gCurrentTargetSong, gVBAPUpdateAzimuth[gCurrentTargetSong], gTargetState);*/
+    // Print the current target song and playback state
+    //rt_printf("Target song is: %i (%i)\n", gCurrentTargetSong, position);
+    /*rt_printf("TARGET – song is: %i; position is: %i; state is\n", \
+    gCurrentTargetSong, gVBAPUpdateAzimuth[gCurrentTargetSong], gTargetState);*/
 }
 
 
