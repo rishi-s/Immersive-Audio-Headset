@@ -31,11 +31,10 @@ extern int gEnd;
 // variables from SpatialFocus.h
 extern int gCurrentTargetSong;
 
-
-
-
+// arrays for task variables
 int gTaskLengths[NUM_TASKS];          // number of tracks in each task playlist
 int gTaskAnswers[NUM_TASKS];          // number of answers required of each task
+std::string gTaskText[NUM_TASKS];     // text descriptions for task requirement
 
 
 // vectors for playlist interaction
@@ -64,7 +63,22 @@ void writePlaylistLog(void *);
 
 // function to extract track names from .csv
 void getTaskTracks(){
+  std::ifstream list("tracks/TaskList.csv");
+  std::string task;
 
+  int question=0;
+
+  if (list.good() ){
+    // read consecutive lines in a loop
+    while(getline(list, task)){
+      //convert the next line to a readable string and store in a variable
+      std::stringstream convertor(task);
+      // add the strings to the array and increment index
+      gTaskText[question]=task;
+      rt_printf("%i = %s\n", question, gTaskText[question].c_str());
+      question++;
+    }
+  }
 
 
   for (int i=0; i<NUM_TASKS; i++){
@@ -194,10 +208,12 @@ void removeTrack_background(void *){
 
 // funciton to write the playlist interaction log
 void writePlaylistLog(void *){
+  // write the log
   std::ofstream Log("PlaylistLog" + to_string(gTaskCounter-1) + ".csv");
   Log << "Track,Pos1,Time1,Pos2,Time2,Appearances,Status,Active,Background" << '\n';
   for (int i = 0; i < gDecisionList.size(); i++) {
     Log << gDecisionList[i] << ',';
+    Log << gTaskList[gTaskCounter-2][gDecisionList[i]] << ',';
     Log << gFirstPosition[i] << ',';
     Log << gFirstTime[i] << ',';
     Log << gLastPosition[i] << ',';
@@ -207,6 +223,7 @@ void writePlaylistLog(void *){
     Log << gActiveListen[i] << ',';
     Log << gBackgroundListen[i] << ',' << '\n';;
   }
+  // clear the vectors
   gDecisionList.clear();
   gFirstPosition.clear();
   gFirstTime.clear();

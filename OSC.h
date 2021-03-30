@@ -58,6 +58,7 @@ void checkChannelMessages(oscpkt::Message* msg);
 void checkGlobalMessages(oscpkt::Message* msg);
 void runHRTFComparisonChecks(oscpkt::Message* msg);
 void runLocalisationTestChecks(oscpkt::Message* msg);
+void sendHRTFLocMsgs();
 void changeTrack(int notification);
 
 
@@ -213,6 +214,8 @@ bool setupOSC(){
 	oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
 	oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
 
+
+
 	// confirm setup
 	return true;
 }
@@ -364,36 +367,17 @@ void changeTrack(int notification){
 void sendCurrentStatusOSC(){
 	oscClient.newMessage("/one/aziText").add(to_string(gVBAPUpdateAzimuth[1])).send();
 	oscClient.newMessage("/one/eleText").add(to_string(gVBAPUpdateElevation[1])).send();
-	oscClient.newMessage("/two/targetText").add(gLocationText).send();
-	oscClient.newMessage("/one/choiceText").add(gProgressText).send();
-	oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
-	oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
 	oscClient.newMessage("/one/calibrateText").add(gCalibrateText).send();
-	if(gHeardAState){
-		oscClient.newMessage("/one/playAText").add(std::string("Play A")).send();
-	}
-	else {
-		oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
-	}
-	if(gHeardBState){
-		oscClient.newMessage("/one/playBText").add(std::string("Play B")).send();
-	}
-	else {
-		oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
-	}
+	oscClient.newMessage("/two/taskCount").add(to_string(gTaskCounter)).send();
+	oscClient.newMessage("/two/taskLength").add(to_string(gTaskAnswers[gTaskCounter-1])).send();
+	oscClient.newMessage("/two/taskDescriptor").add(gTaskText[gTaskCounter-1]).send();
+	oscClient.newMessage("/two/taskProgress").add(to_string(gDynamicPlaylist[gTaskCounter-1].size())).send();
 
-	if(gChoiceState==kNoneSelected){
-		oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
-		oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
-	}
-	else if (gChoiceState==kASelected) {
-		oscClient.newMessage("/one/chooseAToggle").add(1.0f).send();
-		oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
-	}
-	else if (gChoiceState==kBSelected) {
-		oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
-		oscClient.newMessage("/one/chooseBToggle").add(1.0f).send();
-	}
+
+	if(gFixedTrajectory) sendHRTFLocMsgs();
+
+
+
 }
 
 // helper function for checking channel OSC messages related source placement
@@ -680,6 +664,41 @@ void runLocalisationTestChecks(oscpkt::Message* msg)	{
 		}
 	}
 }
+
+void sendHRTFLocMsgs(){
+	oscClient.newMessage("/one/choiceText").add(gProgressText).send();
+	oscClient.newMessage("/one/playbackText").add(gPlaybackText).send();
+	oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
+	if(gHeardAState){
+		oscClient.newMessage("/one/playAText").add(std::string("Play A")).send();
+	}
+	else {
+		oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
+	}
+	if(gHeardBState){
+		oscClient.newMessage("/one/playBText").add(std::string("Play B")).send();
+	}
+	else {
+		oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
+	}
+
+	if(gChoiceState==kNoneSelected){
+		oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+		oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
+	}
+	else if (gChoiceState==kASelected) {
+		oscClient.newMessage("/one/chooseAToggle").add(1.0f).send();
+		oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
+	}
+	else if (gChoiceState==kBSelected) {
+		oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
+		oscClient.newMessage("/one/chooseBToggle").add(1.0f).send();
+	}
+	oscClient.newMessage("/two/targetText").add(gLocationText).send();
+}
+
+
+
 
 // close OSC messaging
 void cleanupOSC(){
