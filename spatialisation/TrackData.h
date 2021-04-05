@@ -11,12 +11,17 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <algorithm>
+#include <random>       // std::default_random_engine
+#include <chrono>       // std::chrono::system_clock
+#include <unordered_map>
 
-#define NUM_TASKS 3
+#define NUM_TASKS 5
 
 
 // variables from render.cpp
 extern void loadAudioFiles();
+extern void startPlayback(int stream);
 extern int gPlaybackState;
 
 // variables from OSC.h
@@ -27,6 +32,8 @@ extern int gRejectCounter;
 extern int gLastRemovedTrack;
 extern int gSceneTracks[];
 extern int gEnd;
+extern bool gPauseState;
+extern string gPauseText;
 
 // variables from SpatialFocus.h
 extern int gCurrentTargetSong;
@@ -156,20 +163,23 @@ void removeTrack(int removedTrack){
         gDynamicPlaylist[gTaskCounter-1].erase(gDynamicPlaylist[gTaskCounter-1].begin()+track);
       }
       // print each track number in the dynamic playlist
-      rt_printf("%i,",gDynamicPlaylist[gTaskCounter-1][track]);
+      //rt_printf("%i,",gDynamicPlaylist[gTaskCounter-1][track]);
   }
   // revise the dynamic playlist size
   gEnd=gDynamicPlaylist[gTaskCounter-1].size();
   // if the task is complete
   if(gEnd==gTaskAnswers[gTaskCounter-1]){
-    rt_printf("** CHANGE! **\n");
+    //rt_printf("** CHANGE! **\n");
+    startPlayback(10);
+    gPauseState=true;
+    gPauseText="CONTINUE STUDY";
     // and if we still have tasks left to do
     if(++gTaskCounter<=NUM_TASKS) {
       // write the final responses
       Bela_scheduleAuxiliaryTask(gWriteResponses);
       // load the next set of audio
       Bela_scheduleAuxiliaryTask(gLoadPlaylist);
-      rt_printf("Load command issued.");
+      //rt_printf("Load command issued.");
       // reset all task-related variables
       gTimeCounter=0;
       gPlaylistCounter=5;
@@ -181,15 +191,18 @@ void removeTrack(int removedTrack){
     }
     // otherwise stop the audio and write final responses
     else{
-      gTaskCounter=NUM_TASKS+1;
-      rt_printf("Stop Now");
+      gTaskCounter=0;
+      gEnd=0;
+      gPauseState=true;
+      gPauseText="THANK YOU";
+      //rt_printf("Stop Now");
       Bela_scheduleAuxiliaryTask(gWriteResponses);
-      rt_printf("Stopped");
+      //rt_printf("Stopped");
     }
   }
   // decrement the playlist counter and if we've reached the beginning, wrap it
   if(--gPlaylistCounter<0)gPlaylistCounter=gEnd-1;
-  rt_printf("\nReset Counter = %i; Reset Range = %i \n",	\
+  //rt_printf("\nReset Counter = %i; Reset Range = %i \n",	\
     gPlaylistCounter, gDynamicPlaylist[gTaskCounter-1].size());
 }
 
@@ -208,8 +221,30 @@ void removeTrack_background(void *){
 
 // funciton to write the playlist interaction log
 void writePlaylistLog(void *){
+
+  // Instantiate time class
+  time_t thisTime;
+
+  // Declare variable to store localtime()
+  struct tm * currentTimeHere;
+
+  // Applying time()
+  time (&thisTime);
+
+  // Using localtime()
+  currentTimeHere = localtime(&thisTime);
+
+  // write filename and data
+  //cout << "Current Day, Date and Time is = "
+       //<< asctime(currentTimeHere);
+  std::string timeStamp = asctime(currentTimeHere);
+  std::replace(timeStamp.begin(), timeStamp.end(), ' ', '_');
+  std::replace(timeStamp.begin(), timeStamp.end(), '\n', '_');
+  std::ofstream Log("/root/Bela/projects/VBAP_STUDY_LOGS/" + timeStamp + \
+    "_PlaylistLog" + to_string(gTaskCounter-1) + ".csv");
+
   // write the log
-  std::ofstream Log("PlaylistLog" + to_string(gTaskCounter-1) + ".csv");
+
   Log << "Track,Pos1,Time1,Pos2,Time2,Appearances,Status,Active,Background" << '\n';
   for (int i = 0; i < gDecisionList.size(); i++) {
     Log << gDecisionList[i] << ',';

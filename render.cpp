@@ -139,7 +139,7 @@ void render(BelaContext *context, void *userData){
         reverb->writeToDrySource(\
           sampleStream[gPlaybackStates[gTargetState][stream]]->getSample(0) \
           * gInputVolume[gPlaybackStates[gTargetState][stream]],stream);
-        // feed 0.3 of stream to reverb generator
+        // feed 0.4 of stream to reverb generator
         reverbInput += sampleStream[gPlaybackStates[gTargetState][stream]] \
           ->getSample(0) * gInputVolume[gPlaybackStates[gTargetState][stream]] \
           * 0.4;
@@ -152,7 +152,7 @@ void render(BelaContext *context, void *userData){
       // sum monoaural notification signals
       float monoOut=0.0;
       for(int notifs=NUM_VBAP_TRACKS; notifs<NUM_STREAMS-1; notifs++){
-        monoOut += sampleStream[notifs]->getSample(0);
+        monoOut += sampleStream[notifs]->getSample(0)*gInputVolume[notifs];
       }
       gOutputBufferL[gOutputBufferWritePointer]+=monoOut;
       gOutputBufferR[gOutputBufferWritePointer]+=monoOut;
@@ -182,8 +182,8 @@ void createEnvironment(int sampleRate){
   // set variables for room dimensons and source positions
   float roomWidth, roomLength, roomHeight, hrtfDepth, latCentre, longCentre, \
     earLevel, sourceDepth, sourceLat, sourceLong, sourceVertical;
-  roomWidth = 3;
-  roomLength = 3;
+  roomWidth = 3.5;
+  roomLength = 4.5;
   roomHeight = 3;
   hrtfDepth = 1;
   latCentre = roomWidth/2;
@@ -218,14 +218,14 @@ void loadAudioFiles(){
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,true);
       gInputVolume[track]=1.0;
       updatePlaylistLog(track, track, 0.0);
-      sampleStream[track]->togglePlayback(1);
+      sampleStream[track]->togglePlayback(0);
     }
     // load the first voiceover file into buffer 6
     else {
       std::string file= "./tracks/" + gTaskList[gTaskCounter-1][0] + "_VXO.wav";
       const char * id = file.c_str();
       sampleStream[track] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
-      gInputVolume[track] = 1.2;
+      gInputVolume[track] = 0.7;
       sampleStream[track]->togglePlayback(0);
     }
   }
@@ -235,7 +235,7 @@ void loadAudioFiles(){
     std::string file= "./sfx/sfx" + number + ".wav";
     const char * id = file.c_str();
     sampleStream[sfx] = new SampleStream(id,NUM_CHANNELS,BUFFER_SIZE,false);
-    gInputVolume[sfx]=1.5;
+    gInputVolume[sfx]=0.1;
     sampleStream[sfx]->togglePlayback(0);
   }
   rt_printf("SUCCESS – Files Loaded");

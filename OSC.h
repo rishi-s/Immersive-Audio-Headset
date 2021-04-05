@@ -93,6 +93,8 @@ int gRejectCounter=0;							// running tally of rejected songs
 int gLastRemovedTrack=0;					// variable to store removed track ID
 int gSceneTracks[5]={0,1,2,3,4};	// current tracks
 int gEnd=gDynamicPlaylist[gTaskCounter-1].size(); // max count for playlist
+bool gPauseState=true;
+string gPauseText="START STUDY";
 
 
 
@@ -120,7 +122,7 @@ void parseMessage(oscpkt::Message* msg){
 	//rt_printf("received message to: %s\n", msg->addressPattern().c_str());
 
 	// variables to store OSC input arguments
-	//int intArg;
+	int intArg;
 	float floatArg;
 
 	// record any activity on the swipe area, including current position:
@@ -198,14 +200,15 @@ bool setupOSC(){
 	}
 	if(!ok) {
 		fprintf(stderr, "No handshake received: %d\n", ret);
-		return false;
 	}
+
 	// in the remainder of the program, we will be calling readRt() from render(), and we want it
 	// to return immediately if there are no new messages available. We therefore set the
 	// pipe to non-blocking mode
 	oscPipe.setBlockingRt(false);
 
-	// send default messages to setup HRTF comparison UI
+	oscClient.newMessage("/two/mainvol").add(25.0f).send();
+	oscClient.newMessage("/two/taskState").add(gPauseText).send();
 	oscClient.newMessage("/one/choiceText").add(gProgressText).send();
 	oscClient.newMessage("/one/playAText").add(std::string("*Play A*")).send();
 	oscClient.newMessage("/one/playBText").add(std::string("*Play B*")).send();
@@ -213,8 +216,6 @@ bool setupOSC(){
 	oscClient.newMessage("/one/chooseAToggle").add(0.0f).send();
 	oscClient.newMessage("/one/chooseBToggle").add(0.0f).send();
 	oscClient.newMessage("/one/submitAnsText").add(gSubmitText).send();
-
-
 
 	// confirm setup
 	return true;
@@ -270,6 +271,12 @@ void checkOSC() {
 
 		// if touch pad has just been released
 		if(!gCurrentSceneMode && gPreviousSceneMode && gPreviousSwipeActivity){
+			// check if we are paused
+			if(gPauseState==true){
+				resumeAllMusic(2.0);
+				gPauseText="PAUSE STUDY";
+				gPauseState=false;
+			}
 
 			// stop the voiceover
 			pausePlayback(5);
@@ -288,13 +295,13 @@ void checkOSC() {
 				Bela_scheduleAuxiliaryTask(gReorderPlaylist);
 			}
 			// otherwise exit solo mode gracefully
-			else{
+			//else{
 				for(int song=0; song<5; song++){
 					if(song!=gCurrentTargetSong){
 						resumePlayback(song);
 					}
 				}
-			}
+			//}
 		}
 
 		// update scene modes and locations
@@ -310,10 +317,14 @@ void checkOSC() {
 		oscPipe.setBlockingRt(false);
 		// update counters
 		gOSCCounter=0;
-		// increment time on task counter and background listening for each track
-		gTimeCounter+=gTimeInc;
-		for(int song=0; song<5; song++){
-			gBackgroundListen[gSceneTracks[song]]+=gTimeInc;
+		// if not paused, increment times
+		if(gPauseState==false){
+			// increment time counter
+			gTimeCounter+=gTimeInc;
+			// increment background listening counters
+			for(int song=0; song<5; song++){
+				gBackgroundListen[gSceneTracks[song]]+=gTimeInc;
+			}
 		}
 	}
 }
@@ -321,7 +332,7 @@ void checkOSC() {
 void changeTrack(int notification){
 	// play notification
 	startPlayback(notification);
-	rt_printf("Old = %i; ", gSceneTracks[gCurrentTargetSong]);
+	//rt_printf("Old = %i; ", gSceneTracks[gCurrentTargetSong]);
 
 
 	// change song to the next in dynamic list not currenlty playing
@@ -343,7 +354,7 @@ void changeTrack(int notification){
 	// if there's no match proceed with the next track
 	gSceneTracks[gCurrentTargetSong]=gDynamicPlaylist[gTaskCounter-1][gPlaylistCounter];
 
-	rt_printf("New = %i; ", gSceneTracks[gCurrentTargetSong]);
+	//rt_printf("New = %i; ", gSceneTracks[gCurrentTargetSong]);
 		// move playlist counter and if we've reached the end
 	if(++gPlaylistCounter==gEnd){
 		// go back to the beginning
@@ -351,7 +362,7 @@ void changeTrack(int notification){
 		// play the notification
 		startPlayback(9);
 	}
-	rt_printf("Counter = %i; Range = %i \n",	\
+	//rt_printf("Counter = %i; Range = %i \n",	\
 		gPlaylistCounter, gDynamicPlaylist[gTaskCounter-1].size());
 	// load the new audio file
 	changeAudioFiles(gCurrentTargetSong,gSceneTracks[gCurrentTargetSong],".wav");
@@ -359,19 +370,20 @@ void changeTrack(int notification){
 		gTimeCounter);
 	// fade back all tracks
 	resumeAllMusic(1.5);
-	rt_printf("Current Tracks: %i, %i, %i, %i, %i\n", \
+	//rt_printf("Current Tracks: %i, %i, %i, %i, %i\n", \
 		gSceneTracks[0], gSceneTracks[1], gSceneTracks[2], \
 		gSceneTracks[3], gSceneTracks[4]);
 }
 
 void sendCurrentStatusOSC(){
-	oscClient.newMessage("/one/aziText").add(to_string(gVBAPUpdateAzimuth[1])).send();
-	oscClient.newMessage("/one/eleText").add(to_string(gVBAPUpdateElevation[1])).send();
+	oscClient.newMessage("/one/aziText").add(to_string(gVBAPUpdateAzimuth[2])).send();
+	oscClient.newMessage("/one/eleText").add(to_string(gVBAPUpdateElevation[2])).send();
 	oscClient.newMessage("/one/calibrateText").add(gCalibrateText).send();
 	oscClient.newMessage("/two/taskCount").add(to_string(gTaskCounter)).send();
 	oscClient.newMessage("/two/taskLength").add(to_string(gTaskAnswers[gTaskCounter-1])).send();
 	oscClient.newMessage("/two/taskDescriptor").add(gTaskText[gTaskCounter-1]).send();
 	oscClient.newMessage("/two/taskProgress").add(to_string(gDynamicPlaylist[gTaskCounter-1].size())).send();
+	oscClient.newMessage("/two/taskState").add(gPauseText).send();
 
 
 	if(gFixedTrajectory) sendHRTFLocMsgs();
@@ -412,9 +424,9 @@ void checkGlobalMessages(oscpkt::Message* msg){
 	float floatArg;
 	//Global controls (HRTF, head-tracker calibration, IMU reinit, pause, mainVol)
 	if (msg->match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
-		rt_printf("received calibrate command %i \n", intArg);
+		//rt_printf("received calibrate command %i \n", intArg);
 		gCalibrate=intArg;
-		rt_printf("Calibration is %i \n", gCalibrate);
+		//rt_printf("Calibration is %i \n", gCalibrate);
 	}
 	else if (msg->match("/one/hrtf").popInt32(intArg).isOkNoMoreArgs()){
 		rt_printf("received HRTF command %i \n", intArg);
@@ -429,13 +441,22 @@ void checkGlobalMessages(oscpkt::Message* msg){
 	}
 	else if (msg->match("/two/pause").popFloat(floatArg).isOkNoMoreArgs()){
 		if(floatArg==0.0){
-			rt_printf("received pause command: %f \n", floatArg);
-			pauseAllMusic(2.0);
+			//rt_printf("received pause command: %f \n", floatArg);
+			if(gPauseState==false){
+				pauseAllMusic(2.0);
+				gPauseText="RESUME STUDY";
+				gPauseState=true;
+			}
+			else {
+				resumeAllMusic(2.0);
+				gPauseText="PAUSE STUDY";
+				gPauseState=false;
+			}
 		}
 	}
 	else if (msg->match("/two/mainvol").popFloat(floatArg).isOkNoMoreArgs()){
-		rt_printf("received main volume change: %f \n", floatArg);
-		gMainVol=log10(floatArg/140) / log10(140) *-1;
+		//rt_printf("received main volume change: %f \n", floatArg);
+		gMainVol=log10(floatArg/140) / log10(140) *-2;
 	}
 }
 
