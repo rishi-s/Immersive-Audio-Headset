@@ -125,26 +125,29 @@ void parseMessage(oscpkt::Message* msg){
 	int intArg;
 	float floatArg;
 
-	// record any activity on the swipe area, including current position:
-	for(int buttonNo=1; buttonNo<=16; buttonNo++){
-		std::string buttonID=to_string(buttonNo);
-		// store any button activation event and its location
-		if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
-			// store the button value in the array
-			gCurrentSwipeValue[buttonNo-1]=floatArg;
-			// if it is a movement off a button, update the new location
-			if(floatArg==0.0)	{
-				gCurrentLocation=buttonNo;
-				gTransitionContact=true;
+
+	// if not currently paused, record any activity on the swipe area:
+	if(!gPauseState){
+		for(int buttonNo=1; buttonNo<=16; buttonNo++){
+			std::string buttonID=to_string(buttonNo);
+			// store any button activation event and its location
+			if (msg->match("/two/1/"+buttonID).popFloat(floatArg).isOkNoMoreArgs()){
+				// store the button value in the array
+				gCurrentSwipeValue[buttonNo-1]=floatArg;
+				// if it is a movement off a button, update the new location
+				if(floatArg==0.0)	{
+					gCurrentLocation=buttonNo;
+					gTransitionContact=true;
+				}
+				// if it is a movement on a button, update both locations
+				if(floatArg==1.0)	{
+					gPreviousLocation=gCurrentLocation;
+					gCurrentLocation=buttonNo;
+				}
+				//rt_printf("received mode command %i, %f \n", buttonNo, floatArg);
+				// also set the transition flag to true for release events
+				gCurrentSwipeActivity=true;
 			}
-			// if it is a movement on a button, update both locations
-			if(floatArg==1.0)	{
-				gPreviousLocation=gCurrentLocation;
-				gCurrentLocation=buttonNo;
-			}
-			//rt_printf("received mode command %i, %f \n", buttonNo, floatArg);
-			// also set the transition flag to true for release events
-			gCurrentSwipeActivity=true;
 		}
 	}
 
@@ -423,9 +426,9 @@ void checkGlobalMessages(oscpkt::Message* msg){
 	int intArg;
 	float floatArg;
 	//Global controls (HRTF, head-tracker calibration, IMU reinit, pause, mainVol)
-	if (msg->match("/one/calibrate").popInt32(intArg).isOkNoMoreArgs()){
+	if (msg->match("/one/calibrate").popFloat(floatArg).isOkNoMoreArgs()){
 		//rt_printf("received calibrate command %i \n", intArg);
-		gCalibrate=intArg;
+		gCalibrate=floatArg;
 		//rt_printf("Calibration is %i \n", gCalibrate);
 	}
 	else if (msg->match("/one/hrtf").popInt32(intArg).isOkNoMoreArgs()){

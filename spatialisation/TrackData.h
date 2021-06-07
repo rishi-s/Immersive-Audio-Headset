@@ -191,8 +191,7 @@ void removeTrack(int removedTrack){
     }
     // otherwise stop the audio and write final responses
     else{
-      gTaskCounter=0;
-      gEnd=0;
+      gTaskCounter=NUM_TASKS+1;
       gPauseState=true;
       gPauseText="THANK YOU";
       //rt_printf("Stop Now");
@@ -240,12 +239,12 @@ void writePlaylistLog(void *){
   std::string timeStamp = asctime(currentTimeHere);
   std::replace(timeStamp.begin(), timeStamp.end(), ' ', '_');
   std::replace(timeStamp.begin(), timeStamp.end(), '\n', '_');
-  std::ofstream Log("/root/Bela/projects/VBAP_STUDY_LOGS/" + timeStamp + \
+  std::ofstream Log("/root/Bela/projects/BROWSER_STUDY_LOGS/" + timeStamp + \
     "_PlaylistLog" + to_string(gTaskCounter-1) + ".csv");
 
   // write the log
 
-  Log << "Track,Pos1,Time1,Pos2,Time2,Appearances,Status,Active,Background" << '\n';
+  Log << "Track,Name,Pos1,Time1,Pos2,Time2,Appearances,Status,Active,Background" << '\n';
   for (int i = 0; i < gDecisionList.size(); i++) {
     Log << gDecisionList[i] << ',';
     Log << gTaskList[gTaskCounter-2][gDecisionList[i]] << ',';
